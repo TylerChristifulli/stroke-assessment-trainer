@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+</head><body>
+<title>Stroke Assessment Trainer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{
+  color-scheme: dark;
+  --ground:#121518; --panel:#1b2024; --panel-2:#232a2f; --line:#2f383e;
+  --ink:#ebe7df; --ink-dim:#a3aaa9; --glove:#5a93ee; --glove-ink:#0d1a2e;
+  --stroke:#e3a64b; --stroke-ink:#2a1a04; --ok:#6cc59a;
+  --sans:"Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.45;padding-inline:16px;padding-block:14px;box-sizing:border-box}
+*{box-sizing:border-box}
+.wrap{max-width:1280px;margin:0 auto;display:grid;gap:14px;grid-template-columns:minmax(0,1fr) 300px;align-items:start}
+@media (max-width:900px){.wrap{grid-template-columns:minmax(0,1fr)}}
+header{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;justify-content:space-between}
+h1{font-size:19px;margin:0;letter-spacing:.01em;text-wrap:balance}
+h1 small{display:block;font-weight:400;color:var(--ink-dim);font-size:13px;margin-top:2px}
+.mode{display:inline-flex;border:1px solid var(--line);border-radius:999px;padding:3px;background:var(--panel)}
+.mode button{font:600 13px var(--sans);border:0;background:transparent;color:var(--ink-dim);padding:7px 14px;border-radius:999px;cursor:pointer;letter-spacing:.02em}
+.mode button[aria-pressed="true"].n{background:var(--ok);color:#0b2418}
+.mode button[aria-pressed="true"].s{background:var(--stroke);color:var(--stroke-ink)}
+.stage{position:relative;width:100%;aspect-ratio:16/9;max-width:100%;border-radius:10px;overflow:hidden;background:#241c14 center/cover no-repeat;border:1px solid var(--line)}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.vignette{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse 78% 88% at 50% 44%,rgba(0,0,0,0) 55%,rgba(8,5,2,.38) 82%,rgba(8,5,2,.62) 100%)}
+.target{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:var(--glove);box-shadow:0 0 0 3px rgba(90,147,238,.28),0 4px 14px rgba(0,0,0,.4);transition:opacity .35s;opacity:0;pointer-events:none}
+.target.on{opacity:1}
+.loading{position:absolute;inset:0;display:grid;place-items:center;color:var(--ink-dim);font:14px var(--mono);background:rgba(18,21,24,.55)}
+.chip{position:absolute;left:12px;top:12px;font:600 12px var(--mono);letter-spacing:.06em;text-transform:uppercase;padding:5px 9px;border-radius:6px;background:rgba(18,21,24,.72);color:var(--ink)}
+.chip.stroke{color:var(--stroke)}
+aside{display:grid;gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+.card h2{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-dim);margin:0 0 10px;font-weight:700}
+.cmds{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.cmds button{font:600 14px var(--sans);text-align:left;background:var(--panel-2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:10px 11px;cursor:pointer;line-height:1.2}
+.cmds button span{display:block;font:400 11.5px var(--mono);color:var(--ink-dim);margin-top:4px}
+.cmds button:hover{border-color:var(--glove)}
+.cmds button.active{border-color:var(--glove);box-shadow:inset 0 0 0 1px var(--glove)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--glove);outline-offset:2px}
+.mic{display:flex;gap:10px;align-items:center}
+.mic button{flex:none;width:46px;height:46px;border-radius:50%;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);cursor:pointer;display:grid;place-items:center}
+.mic button.live{background:var(--glove);color:var(--glove-ink);border-color:var(--glove);animation:pulse 1.6s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(90,147,238,.45)}50%{box-shadow:0 0 0 8px rgba(90,147,238,0)}}
+@media (prefers-reduced-motion:reduce){.mic button.live{animation:none}}
+.mic p{margin:0;font-size:13px;color:var(--ink-dim)}
+.heard{margin-top:10px;font:13px var(--mono);color:var(--ink);min-height:1.4em;overflow-wrap:anywhere}
+form{display:flex;gap:8px;margin-top:10px}
+input{flex:1;min-width:0;font:14px var(--sans);background:var(--panel-2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:9px 10px}
+form button{font:600 13px var(--sans);background:var(--glove);color:var(--glove-ink);border:0;border-radius:8px;padding:0 12px;cursor:pointer}
+.log{list-style:none;margin:0;padding:0;display:grid;gap:6px;font-size:13px;max-height:180px;overflow:auto}
+.log li{display:flex;gap:8px;align-items:baseline}
+.log time{font:12px var(--mono);color:var(--ink-dim);font-variant-numeric:tabular-nums;flex:none}
+.log b{font-weight:700}
+.cam{position:relative;margin-top:10px;border-radius:8px;overflow:hidden;border:1px solid var(--line);aspect-ratio:4/3;max-width:100%;background:#0c0e10}
+.cam video,.cam canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+.beta{display:inline-block;vertical-align:middle;margin-left:8px;font:700 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--stroke);border:1px solid var(--stroke);border-radius:5px;padding:2px 6px}
+.disclaimer{max-width:1280px;margin:18px auto 0;font-size:12.5px;color:var(--ink-dim)}
+.note{font-size:12.5px;color:var(--ink-dim);margin:8px 0 0}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Stroke Assessment Trainer <span class="beta">Experimental</span><small>Say or tap a command, or turn on your camera and he follows your finger.</small></h1>
+    <div class="mode" role="group" aria-label="Patient condition">
+      <button class="n" id="modeNormal" aria-pressed="true">Normal</button>
+      <button class="s" id="modeStroke" aria-pressed="false">Left hemisphere stroke</button>
+    </div>
+  </header>
+
+  <div class="stage" id="stage">
+    <canvas id="c"></canvas>
+    <div class="vignette"></div>
+    <div class="target" id="target"></div>
+    <div class="chip" id="chip">Normal exam</div>
+    <div class="loading" id="loading">Loading patient…</div>
+  </div>
+
+  <aside>
+    <section class="card">
+      <h2>Voice</h2>
+      <div class="mic">
+        <button id="micBtn" aria-label="Start listening" title="Start listening">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+        </button>
+        <p id="micState">Tap the mic and give commands out loud.</p>
+      </div>
+      <div class="heard" id="heard" aria-live="polite"></div>
+      <form id="typeForm">
+        <input id="typeIn" placeholder="Or type: “smile for me”" autocomplete="off">
+        <button type="submit">Send</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Camera finger tracking</h2>
+      <div class="mic">
+        <button id="camBtn" aria-label="Start camera tracking" title="Start camera tracking">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h3l2-2h8l2 2h3v12H3z"/><circle cx="12" cy="13" r="3.5"/></svg>
+        </button>
+        <p id="camState">Hold up one finger in front of your camera and he follows it.</p>
+      </div>
+      <div class="cam" id="camWrap" hidden>
+        <video id="camVid" playsinline muted></video>
+        <canvas id="camDot"></canvas>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Exam commands</h2>
+      <div class="cmds" id="cmds">
+        <button data-cmd="smile">Smile<span>“show me your teeth”</span></button>
+        <button data-cmd="brows">Raise brows<span>“raise your eyebrows”</span></button>
+        <button data-cmd="close">Close eyes<span>“squeeze your eyes shut”</span></button>
+        <button data-cmd="follow">Follow finger<span>“follow my finger”</span></button>
+        <button data-cmd="left">Look left<span>“look to your left”</span></button>
+        <button data-cmd="right">Look right<span>“look to your right”</span></button>
+        <button data-cmd="nod">Can you hear me?<span>“can you hear me”</span></button>
+        <button data-cmd="swallow">Swallow<span>“swallow for me”</span></button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Exam log</h2>
+      <ul class="log" id="log"></ul>
+    </section>
+  </aside>
+</div>
+
+<p class="disclaimer">Experimental teaching tool. Findings are simplified for practicing the exam and are not a substitute for clinical training or judgment. Voice and camera work in Chrome, Edge and Safari; video and audio stay in your browser.</p>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const stage=document.getElementById('stage');
+stage.style.backgroundImage='url('+((window.PATIENT_DATA&&window.PATIENT_DATA.plate)||'room_plate.jpg')+')';
+const canvas=document.getElementById('c');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+renderer.toneMapping=THREE.NoToneMapping;
+const scene=new THREE.Scene();
+let camera=new THREE.PerspectiveCamera(16,16/9,0.1,100);
+
+const R=THREE.MathUtils.degToRad;
+const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+const ss=(e0,e1,x)=>{const t=clamp((x-e0)/(e1-e0),0,1);return t*t*(3-2*t);};
+const rnd=(a,b)=>a+Math.random()*(b-a);
+
+// ---------------- rig
+let body=null,outline=null,eyes={},bones={},dict=null,inf=null;
+const eyeRest={},boneRest={};
+const tmpQ=new THREE.Quaternion(),tmpE=new THREE.Euler();
+
+function resize(){
+  const w=stage.clientWidth,h=stage.clientHeight;
+  renderer.setSize(w,h,false);
+  camera.aspect=16/9; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+
+const loader=new GLTFLoader();
+const PD=window.PATIENT_DATA;
+(PD?Promise.resolve(PD.glb):fetch('patient_glb.txt').then(r=>{if(!r.ok)throw new Error(r.status);return r.text();})).then(txt=>{
+  const bin=atob(txt.trim()); const buf=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)buf[i]=bin.charCodeAt(i);
+  loader.parse(buf.buffer,'',onLoad,onErr);
+}).catch(onErr);
+function onErr(err){document.getElementById('loading').textContent='Could not load the patient model.';console.error(err);}
+function onLoad(g){
+  scene.add(g.scene);
+  g.scene.updateMatrixWorld(true);
+  if(g.cameras&&g.cameras[0]){camera=g.cameras[0];}
+  const tl=new THREE.TextureLoader();
+  const tex=(url)=>{const t=tl.load(url);t.flipY=false;t.colorSpace=THREE.SRGBColorSpace;t.anisotropy=4;return t;};
+  const texBody=tex(PD?PD.tex:'tex_patient.jpg'), texEye=tex(PD?PD.eye:'tex_eye.jpg');
+  g.scene.traverse(o=>{
+    if(o.isMesh){
+      const isEye=o.name.startsWith('Eye');
+      const m=new THREE.MeshBasicMaterial({map:isEye?texEye:texBody,color:isEye?0xffffff:0xf3e7da,side:isEye?THREE.FrontSide:THREE.DoubleSide});
+      o.material=m; o.frustumCulled=false;
+    }
+    if(o.isSkinnedMesh&&o.morphTargetDictionary){body=o;}
+    if(o.name==='Eye_L')eyes.L=o;
+    if(o.name==='Eye_R')eyes.R=o;
+    if(o.isBone)bones[o.name]=o;
+  });
+  dict=body.morphTargetDictionary; inf=body.morphTargetInfluences;
+  // outline: inverted hull that shares the skeleton and morph weights
+  const om=new THREE.MeshBasicMaterial({color:0x160e08,side:THREE.BackSide,polygonOffset:true,polygonOffsetFactor:4,polygonOffsetUnits:16});
+  om.onBeforeCompile=(sh)=>{
+    sh.vertexShader=sh.vertexShader.replace('#include <morphtarget_vertex>','#include <morphtarget_vertex>\n transformed += normalize(objectNormal)*0.0024;');
+  };
+  outline=new THREE.SkinnedMesh(body.geometry,om);
+  outline.bind(body.skeleton,body.bindMatrix);
+  outline.morphTargetInfluences=body.morphTargetInfluences;
+  outline.morphTargetDictionary=body.morphTargetDictionary;
+  outline.frustumCulled=false;
+  body.parent.add(outline); outline.position.copy(body.position); outline.quaternion.copy(body.quaternion); outline.scale.copy(body.scale);
+  for(const s of ['L','R']){
+    const e=eyes[s]; e.updateMatrixWorld(true);
+    const pw=new THREE.Quaternion(); e.parent.getWorldQuaternion(pw);
+    eyeRest[s]={q0:e.quaternion.clone(),pw,pwi:pw.clone().invert(),pos:e.getWorldPosition(new THREE.Vector3())};
+  }
+  for(const n of ['Head','Neck','Chest','Hair']){
+    const b=bones[n]; if(!b)continue;
+    const pw=new THREE.Quaternion(); b.parent.getWorldQuaternion(pw);
+    boneRest[n]={q0:b.quaternion.clone(),pw,pwi:pw.clone().invert()};
+  }
+  resize();
+  {const ld=document.getElementById('loading'); if(ld) ld.remove();}
+  ready=true;
+}
+
+// ---------------- state
+let ready=false, stroke=false, strokeAmt=0;
+const C={smileL:0,smileR:0,droop:0,browL:0,browR:0,blL:0,blR:0,closeL:0,closeR:0,gx:0,gy:0,dx:0,dy:0,breath:0,catch:0,swallow:0,h1:0,h2:0,h3:0,nod:0,turn:0,tilt:0};
+let action=null; // {name,t0,dur}
+const idle={blinkAt:1.5,blink:null,dartAt:1,dart:[0,0],swallowAt:rnd(14,24),swallow:null,head:{t:[0,0,0],v:[0,0,0],p:[0,0,0],next:0.5},chest:{t:[0,0,0],v:[0,0,0],p:[0,0,0],next:2}};
+let targetGaze=null; // for the on-screen finger dot
+const cam={on:false,x:0,y:0,seen:0};
+
+function env(t,dur,a=0.6,r=0.6){return ss(0,a,t)*(1-ss(dur-r,dur,t));}
+function blinkCurve(t){ // seconds; 16 frames at 24fps
+  if(t<0.21)return ss(0,0.21,t); if(t<0.29)return 1; if(t<0.67)return 1-ss(0.29,0.67,t); return 0;}
+
+const DUR={smile:3.4,brows:3.4,close:3.6,follow:7.0,left:3.0,right:3.0,nod:1.8,swallow:1.0};
+function run(cmd,source){
+  if(!ready||!DUR[cmd])return;
+  action={name:cmd,t0:now,dur:DUR[cmd]};
+  const labels={smile:'Smile',brows:'Raise eyebrows',close:'Close eyes tight',follow:'Follow my finger',left:'Look left',right:'Look right',nod:'Can you hear me?',swallow:'Swallow'};
+  logLine(labels[cmd],source);
+  document.querySelectorAll('#cmds button').forEach(b=>b.classList.toggle('active',b.dataset.cmd===cmd));
+}
+
+// gaze a patient can achieve, given the target (stroke: can't pass midline to his right)
+function reachable(g,t){
+  if(!stroke)return g;
+  if(g>=0.05)return g;
+  // effortful jerks toward midline, slow pull back to the left
+  const ph=(t%0.45)/0.45;
+  return 0.02+0.11*ss(0.08,1,ph);
+}
+
+let now=0,last=performance.now();
+function tick(ts){
+  requestAnimationFrame(tick);
+  const dt=Math.min(0.05,(ts-last)/1000); last=ts; now+=dt;
+  if(!ready)return;
+  strokeAmt+=((stroke?1:0)-strokeAmt)*Math.min(1,dt*1.6);
+
+  // ---- idle layers
+  const t=now;
+  C.breath=(0.5-0.5*Math.cos(2*Math.PI*t*14/60+0.5*Math.sin(t/4)))*(0.85+0.15*Math.sin(t/2.5));
+  C.h1=0.35*Math.sin(t*0.37+1)+0.2*Math.sin(t*0.91+2);
+  C.h2=0.3*Math.sin(t*0.29+4)+0.2*Math.sin(t*0.77);
+  C.h3=0.35*Math.sin(t*0.43+2.5)+0.15*Math.sin(t*1.1+1);
+
+  let smileL=0,smileR=0,browL=0,browR=0,bl=0,closeA=0,gx=0.55*strokeAmt,gy=0,nod=0,turn=0,tilt=0,catchv=0,swallowv=0;
+  let busyEyes=false,noDarts=false; targetGaze=null;
+
+  if(action){
+    const a=action,ta=now-a.t0;
+    if(ta>a.dur){action=null;document.querySelectorAll('#cmds button').forEach(b=>b.classList.remove('active'));}
+    else{
+      const e=env(ta,a.dur);
+      if(a.name==='smile'){smileL=e;smileR=e*(stroke?0.15:1);catchv=ss(0,.2,ta)*(1-ss(.2,.6,ta));}
+      if(a.name==='brows'){browL=e;browR=e*(stroke?0.9:1);}
+      if(a.name==='close'){const ec=env(ta,a.dur,0.45,0.55);closeA=ec;busyEyes=true;noDarts=true;
+        bl=ec*(1-0.12*Math.max(0,Math.sin((ta-0.8)*3.2)));smileL=0.12*ec;smileR=0.12*ec*(stroke?0.5:1);nod+=R(0.7)*ec;}
+      if(a.name==='follow'||a.name==='left'||a.name==='right'){
+        noDarts=true;
+        let tg;
+        if(a.name==='follow'){
+          const k=[[0,0],[1.0,0.6],[2.1,0.6],[3.7,-0.6],[4.9,-0.6],[6.2,0],[7,0]];
+          let i=0;while(i<k.length-2&&ta>k[i+1][0])i++;
+          const u=ss(k[i][0],k[i+1][0],ta);tg=k[i][1]+(k[i+1][1]-k[i][1])*u;
+        }else{
+          const side=a.name==='left'?0.6:-0.6;tg=side*env(ta,a.dur,0.45,0.5);
+        }
+        targetGaze=tg;
+        const on=env(ta,a.dur,0.5,0.5);
+        const want=reachable(tg,ta);
+        gx=gx*(1-on)+want*on;
+        if(stroke&&tg<0.05){browL=browR=0;bl=0.25*on;closeA=0.08*on;turn+=-R(2)*on;}
+        else turn+=R(3)*tg*on;
+      }
+      if(a.name==='nod'){const k=ss(0,.15,ta)*(1-ss(1.5,1.8,ta));nod+=R(6)*Math.sin(ta*Math.PI*2.4)*k*(ta<1.3?1:0.5);browL=browR=0.22*env(ta,a.dur,.2,.5);smileL=0.12*env(ta,a.dur,.3,.6);smileR=smileL*(stroke?0.3:1);}
+      if(a.name==='swallow'){swallowv=blinkCurve(ta*0.55);}
+    }
+  }
+
+  // live finger from the webcam (ignored while a command is running)
+  const camLive=cam.on&&!action&&(now-cam.seen)<0.35;
+  if(camLive){
+    noDarts=true;
+    const want=reachable(cam.x,now);
+    gx=want; gy=cam.y;
+    if(stroke&&cam.x<0.05){bl=0.22;closeA=Math.max(closeA,0.06);turn+=-R(2);}
+    else turn+=R(3.5)*cam.x;
+    nod+=-R(2)*cam.y;
+  }
+  // blinks
+  if(!busyEyes){
+    if(!idle.blink&&t>idle.blinkAt){idle.blink=t;}
+    if(idle.blink!==null){const b=blinkCurve(t-idle.blink);closeA=Math.max(closeA,b);if(t-idle.blink>0.7){idle.blink=null;idle.blinkAt=t+rnd(2.6,5.2);}}
+  }else{idle.blink=null;idle.blinkAt=t+rnd(1,2);}
+  // eye darts: snap in ~1 frame, hold
+  if(!noDarts&&t>idle.dartAt){
+    idle.dart=Math.random()<0.3?[rnd(-.02,.02),rnd(-.015,.015)]:[(Math.random()<.5?-1:1)*rnd(.06,.18),rnd(-.1,.06)];
+    idle.dartAt=t+rnd(0.6,1.8);
+  }
+  if(noDarts)idle.dart=[0,0];
+  C.dx+=(idle.dart[0]-C.dx)*Math.min(1,dt*28); C.dy+=(idle.dart[1]-C.dy)*Math.min(1,dt*28);
+  // occasional swallow
+  if(!idle.swallow&&t>idle.swallowAt){idle.swallow=t;}
+  if(idle.swallow!==null){swallowv=Math.max(swallowv,blinkCurve((t-idle.swallow)*0.55));if(t-idle.swallow>1.3){idle.swallow=null;idle.swallowAt=t+rnd(16,30);}}
+  // head: move-and-settle toward random targets, spring gives arcs and overshoot
+  const H=idle.head,calm=(action&&['follow','left','right'].includes(action.name))?0.35:1;
+  if(t>H.next){H.t=[R(rnd(-1.3,1.3))*calm,R(rnd(-1.7,1.7))*calm+R(4)*C.dx,R(rnd(-1.1,1.1))*calm];H.next=t+rnd(0.8,1.9);}
+  const Cc=idle.chest;
+  if(t>Cc.next){Cc.t=[R(rnd(-.6,.6)),R(rnd(-1.4,1.4)),R(rnd(-1,1))];Cc.next=t+rnd(2.5,4.5);}
+  for(const S of [[H,26,9],[Cc,8,5]]){const [o,k,c]=S;for(let i=0;i<3;i++){const a=k*(o.t[i]-o.p[i])-c*o.v[i];o.v[i]+=a*dt;o.p[i]+=o.v[i]*dt;}}
+
+  // ---- smooth toward this frame's targets
+  const f=(cur,tgt,sp)=>cur+(tgt-cur)*Math.min(1,dt*sp);
+  C.smileL=f(C.smileL,smileL,9);C.smileR=f(C.smileR,smileR,9);
+  C.browL=f(C.browL,browL,9);C.browR=f(C.browR,browR,9);
+  C.blL=f(C.blL,bl,9);C.blR=f(C.blR,bl*(stroke?0.9:1),9);
+  C.closeL=closeA; C.closeR=closeA*(stroke&&action&&action.name==='close'?0.95:1);
+  const pursuing=camLive||(action&&['follow','left','right'].includes(action.name));
+  C.gx=f(C.gx,gx,pursuing?(stroke&&gx<0.2?40:8):4);
+  C.gy=f(C.gy,gy,camLive?8:6);
+  C.nod=f(C.nod,nod,10);C.turn=f(C.turn,turn,6);C.tilt=f(C.tilt,tilt,6);
+  C.catch=f(C.catch,catchv,14);C.swallow=f(C.swallow,swallowv,20);
+  C.droop=strokeAmt;
+
+  applyRig(H.p,Cc.p);
+  updateTarget();
+  renderer.render(scene,camera);
+}
+requestAnimationFrame(tick);
+
+function setM(name,v){const i=dict[name];if(i!==undefined)inf[i]=v;}
+const qD=new THREE.Quaternion();
+function applyRig(hp,cp){
+  const sL=C.smileL,sR=C.smileR;
+  setM('Smile_L',sL);setM('Smile_R',sR);setM('SmileEyes_L',sL);setM('SmileEyes_R',sR);
+  setM('Droop_R',C.droop);
+  setM('BrowRaise_L',C.browL);setM('BrowRaise_R',C.browR);
+  setM('BrowLower_L',Math.min(1,C.blL+0.3*C.closeL));setM('BrowLower_R',Math.min(1,C.blR+0.3*C.closeR));
+  setM('EyeClose_L',C.closeL);setM('EyeClose_R',C.closeR);
+  setM('EyeClose_L_corr',4*C.closeL*(1-C.closeL));setM('EyeClose_R_corr',4*C.closeR*(1-C.closeR));
+  const vg=C.gy+C.dy;
+  setM('LidFollow_Up',clamp(vg*1.6,0,1));setM('LidFollow_Down',clamp(-vg*1.6,0,1));
+  setM('Breathe',C.breath);setM('BreathCatch',C.catch);setM('Swallow',C.swallow);
+  setM('HairStrand_1',C.h1);setM('HairStrand_2',C.h2);setM('HairStrand_3',C.h3);
+  setM('EarUp_L',Math.min(1.6,0.7*C.browL+1.2*sL));setM('EarUp_R',Math.min(1.6,0.7*C.browR+1.2*sR));
+  setM('EarDown_L',0.8*C.blL);setM('EarDown_R',0.8*C.blR);
+  // eyes: rotate about world-aligned axes, relative to the head
+  const yaw=(C.gx+C.dx)*0.45, pitch=-(C.gy+C.dy)*0.30;
+  for(const s of ['L','R']){
+    const r=eyeRest[s]; tmpE.set(pitch,yaw,0,'YXZ'); qD.setFromEuler(tmpE);
+    eyes[s].quaternion.copy(r.pwi).multiply(qD).multiply(r.pw).multiply(r.q0);
+  }
+  // head / neck / chest
+  const rot=(n,x,y,z)=>{const b=bones[n],r=boneRest[n];if(!b)return;tmpE.set(x,y,z,'YXZ');qD.setFromEuler(tmpE);b.quaternion.copy(r.pwi).multiply(qD).multiply(r.pw).multiply(r.q0);};
+  const hx=hp[0]+C.nod, hy=hp[1]+C.turn, hz=hp[2]+C.tilt;
+  rot('Head',hx*0.65,hy*0.65,hz*0.65);
+  rot('Neck',hx*0.35,hy*0.35,hz*0.35);
+  rot('Chest',cp[0],cp[1],cp[2]);
+}
+
+// on-screen finger target at arm's length in front of his eyes
+const tgtEl=document.getElementById('target');
+const mid=new THREE.Vector3();
+function updateTarget(){
+  if(targetGaze===null){tgtEl.classList.remove('on');return;}
+  mid.copy(eyeRest.L.pos).add(eyeRest.R.pos).multiplyScalar(0.5);
+  const a=targetGaze*0.45, p=new THREE.Vector3(mid.x+Math.sin(a)*1.35, mid.y, mid.z+Math.cos(a)*1.35);
+  p.project(camera);
+  tgtEl.style.left=((p.x*0.5+0.5)*100)+'%'; tgtEl.style.top=((-p.y*0.5+0.5)*100)+'%';
+  tgtEl.classList.add('on');
+}
+
+// ---------------- UI
+const logEl=document.getElementById('log');
+function logLine(label,source){
+  const li=document.createElement('li');
+  const m=Math.floor(now/60),s=Math.floor(now%60).toString().padStart(2,'0');
+  li.innerHTML=`<time>${m}:${s}</time><span><b></b> <span class="src"></span></span>`;
+  li.querySelector('b').textContent=label;
+  li.querySelector('.src').textContent=source?`· ${source}`:'';
+  logEl.prepend(li);
+  while(logEl.children.length>30)logEl.lastChild.remove();
+}
+document.getElementById('cmds').addEventListener('click',e=>{const b=e.target.closest('button');if(b)run(b.dataset.cmd,'button');});
+function setMode(s){
+  stroke=s;
+  document.getElementById('modeNormal').setAttribute('aria-pressed',String(!s));
+  document.getElementById('modeStroke').setAttribute('aria-pressed',String(s));
+  const chip=document.getElementById('chip');chip.textContent=s?'Left hemisphere stroke':'Normal exam';chip.classList.toggle('stroke',s);
+  logLine(s?'Switched to stroke patient':'Switched to normal patient','');
+}
+document.getElementById('modeNormal').onclick=()=>setMode(false);
+document.getElementById('modeStroke').onclick=()=>setMode(true);
+
+// phrase matching
+const RULES=[
+  ['close',/\b(close|shut|squeeze)\b.*\beyes?\b|\beyes?\b.*\b(closed|shut)\b/],
+  ['follow',/\b(follow|track|watch)\b.*\b(finger|hand|light|pen)\b|\bfollow me\b/],
+  ['left',/\blook\b.*\bleft\b|\bleft\b.*\blook\b/],
+  ['right',/\blook\b.*\bright\b|\bright\b.*\blook\b/],
+  ['brows',/\beye ?brows?\b|\bi brows?\b|\bbrows?\b|\bforehead\b|\b(raise|lift|wrinkle)\b|\blook surprised\b|\beyebrow\b/],
+  ['smile',/\bsmile\b|\bteeth\b|\bgrin\b/],
+  ['swallow',/\bswallow\b/],
+  ['nod',/\bcan you hear\b|\bhello\b|\bhi there\b|\bnod\b|\bare you (ok|okay|alright)\b/],
+];
+function match(text){const t=' '+text.toLowerCase()+' ';for(const [c,re] of RULES)if(re.test(t))return c;return null;}
+document.getElementById('typeForm').addEventListener('submit',e=>{
+  e.preventDefault();const inp=document.getElementById('typeIn');const c=match(inp.value);
+  document.getElementById('heard').textContent=inp.value?`“${inp.value}”`+(c?'':'  (no matching command)'):'';
+  if(c)run(c,'typed');inp.value='';
+});
+
+// voice
+const micBtn=document.getElementById('micBtn'),micState=document.getElementById('micState'),heard=document.getElementById('heard');
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+let rec=null,listening=false,lastCmd='',lastAt=0,handled=new Set();
+if(!SR){micState.textContent='Voice needs Chrome, Edge or Safari. You can still tap or type commands.';micBtn.disabled=true;}
+function startRec(){
+  rec=new SR(); rec.continuous=true; rec.interimResults=true; rec.lang='en-US';
+  rec.onresult=(ev)=>{
+    for(let i=ev.resultIndex;i<ev.results.length;i++){
+      const txt=ev.results[i][0].transcript.trim(); heard.textContent=`“${txt}”`;
+      if(handled.has(i))continue;
+      const c=match(txt);
+      if(c&&!(c===lastCmd&&now-lastAt<2.5)){handled.add(i);lastCmd=c;lastAt=now;run(c,'voice');}
+    }
+  };
+  rec.onerror=(e)=>{
+    if(e.error==='not-allowed'||e.error==='service-not-allowed'){micState.textContent='Microphone blocked here. Open the local version to use voice, or tap and type commands.';stopRec();}
+  };
+  rec.onend=()=>{handled=new Set();if(listening){try{rec.start();}catch(_){}}};
+  try{rec.start();listening=true;micBtn.classList.add('live');micBtn.setAttribute('aria-label','Stop listening');micState.textContent='Listening. Try “smile for me”.';}
+  catch(e){micState.textContent='Could not start the microphone. Tap or type commands instead.';}
+}
+function stopRec(){listening=false;micBtn.classList.remove('live');micBtn.setAttribute('aria-label','Start listening');if(rec)try{rec.stop();}catch(_){}}
+micBtn.addEventListener('click',()=>{if(listening){stopRec();micState.textContent='Stopped. Tap the mic to listen again.';}else startRec();});
+
+// camera: MediaPipe hand landmarks, index fingertip drives his gaze
+const camBtn=document.getElementById('camBtn'),camState=document.getElementById('camState'),camWrap=document.getElementById('camWrap');
+const vid=document.getElementById('camVid'),dotC=document.getElementById('camDot'),dctx=dotC.getContext('2d');
+let hands=null,stream=null,lastVT=-1;
+const MP='https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+async function camStart(){
+  camState.textContent='Starting camera…';
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({video:{width:640,height:480,facingMode:'user'},audio:false});
+  }catch(e){camState.textContent='Camera blocked here. Open the local version (Start Patient.command) to use your camera.';return;}
+  vid.srcObject=stream; await vid.play(); camWrap.hidden=false;
+  try{
+    if(!hands){
+      camState.textContent='Loading hand tracker…';
+      const {FilesetResolver,HandLandmarker}=await import(MP+'/vision_bundle.mjs');
+      const fs=await FilesetResolver.forVisionTasks(MP+'/wasm');
+      hands=await HandLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',delegate:'GPU'},runningMode:'VIDEO',numHands:1});
+    }
+  }catch(e){camState.textContent='Could not load the hand tracker. Check your internet connection and use the local version.';console.error(e);camStop();return;}
+  cam.on=true; camBtn.classList.add('live'); camBtn.setAttribute('aria-label','Stop camera tracking');
+  camState.textContent='Tracking. Hold up one finger and move it slowly.';
+  logLine('Camera tracking on','');
+  requestAnimationFrame(camLoop);
+}
+function camStop(){
+  cam.on=false; camBtn.classList.remove('live'); camBtn.setAttribute('aria-label','Start camera tracking');
+  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;} camWrap.hidden=true;
+}
+function camLoop(){
+  if(!cam.on)return;
+  requestAnimationFrame(camLoop);
+  if(!hands||vid.readyState<2||vid.currentTime===lastVT)return;
+  lastVT=vid.currentTime;
+  const res=hands.detectForVideo(vid,performance.now());
+  dotC.width=vid.videoWidth; dotC.height=vid.videoHeight; dctx.clearRect(0,0,dotC.width,dotC.height);
+  const lm=res.landmarks&&res.landmarks[0];
+  if(lm){
+    const tip=lm[8];
+    // camera image is un-mirrored: your right is image-left, which is his left (screen right)
+    const tx=clamp((0.5-tip.x)*2.2,-1,1), ty=clamp((0.5-tip.y)*1.8,-1,1);
+    cam.x+= (tx*0.9-cam.x)*0.5; cam.y+=(ty*0.55-cam.y)*0.5; cam.seen=now;
+    dctx.fillStyle='#5a93ee'; dctx.beginPath(); dctx.arc(tip.x*dotC.width,tip.y*dotC.height,9,0,Math.PI*2); dctx.fill();
+  }
+}
+camBtn.addEventListener('click',()=>{ if(cam.on){camStop();camState.textContent='Camera off. Tap to track your finger again.';logLine('Camera tracking off','');} else camStart(); });
+
+window.__sim={run,setMode,cam,get C(){return C;}};
+</script>
+
+</body></html>
