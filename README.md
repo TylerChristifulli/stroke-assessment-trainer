@@ -9,9 +9,10 @@ leftward gaze deviation, can't look right past midline). Commands can be spoken,
 or typed. Webcam finger tracking lets the patient follow the learner's fingertip.
 
 Visual fields (camera): say "look at my nose" (or tap Visual fields). He fixates on center.
-Hold your hand up in one of his four quadrants and wiggle a finger ("tell me when you see it
-move") or hold up 1 to 4 fingers after asking "how many fingers?". In stroke mode he has a right
-homonymous hemianopia: nothing in his right field is seen. Each stimulus is written to the exam log.
+Hold up both hands, one in each of his visual fields, and wiggle the fingers on one side (or
+both). He says which side moved: "Left", "Right" or "Both" (his left/right). In stroke mode he
+has a right homonymous hemianopia: movement in his right field is not seen, so a two-handed
+wiggle gets "Left". Each stimulus is written to the exam log.
 
 He also talks. Ask his name, where he is, what day it is, what happened, whether anything
 hurts, or have him repeat "You can't teach an old dog new tricks". In stroke mode his

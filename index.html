@@ -141,7 +141,6 @@ form button{font:600 13px var(--sans);background:var(--glove);color:var(--glove-
         <button data-cmd="nod">Can you hear me?<span>“can you hear me”</span></button>
         <button data-cmd="swallow">Swallow<span>“swallow for me”</span></button>
         <button data-cmd="fields">Visual fields<span>“look at my nose”</span></button>
-        <button data-cmd="count">How many fingers?<span>“how many fingers?”</span></button>
       </div>
     </section>
 
@@ -272,7 +271,6 @@ function run(cmd,source){
   if(!ready)return;
   if(cmd.startsWith('say:')){const id=cmd.slice(4);logLine(ASKLABEL[id]||id,source);say(id);return;}
   if(cmd==='fields'){fieldsStart(source);return;}
-  if(cmd==='count'){fields.askedCount=now;fields.lastKey=null;logLine('How many fingers?',source);if(!fields.on)fieldsStart('');return;}
   if(cmd==='seeask'){fieldsSeeAsk(source);return;}
   if(cmd==='seewhen'){if(!fields.on)fieldsStart('');logLine('Tell me when you see my finger move',source);fields.lastKey=null;fields.lastActivity=now;setTimeout(()=>say('ok'),200);return;}
   if(!DUR[cmd])return;
@@ -470,7 +468,6 @@ document.getElementById('modeStroke').onclick=()=>setMode(true);
 // phrase matching
 const RULES=[
   ['fields',/\blook at my (nose|face|eyes)\b|\bkeep (your eyes|looking) (on|at)\b|\bstare at (my|me)\b|\bvisual fields?\b|\blook straight at me\b/],
-  ['count',/\bhow many fingers?\b|\bhow many (am i|do you see)\b|\bcount my fingers\b/],
   ['seewhen',/\btell me when you see\b|\bsay (yes|now) when\b|\blet me know when\b/],
   ['seeask',/\bdo you see (my|this|the|it|that)\b|\bcan you see (my|this|it|that|the)\b/],
   ['close',/\b(close|shut|squeeze)\b.*\beyes?\b|\beyes?\b.*\b(closed|shut)\b/],
@@ -557,7 +554,7 @@ async function camStart(){
       camState.textContent='Loading hand tracker…';
       const {FilesetResolver,HandLandmarker}=await import(MP+'/vision_bundle.mjs');
       const fs=await FilesetResolver.forVisionTasks(MP+'/wasm');
-      hands=await HandLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',delegate:'GPU'},runningMode:'VIDEO',numHands:1});
+      hands=await HandLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',delegate:'GPU'},runningMode:'VIDEO',numHands:2});
     }
   }catch(e){camState.textContent='Could not load the hand tracker. Check your internet connection and try again.';console.error(e);camStop();return;}
   cam.on=true; camBtn.classList.add('live'); camBtn.setAttribute('aria-label','Stop camera tracking');
@@ -585,7 +582,7 @@ function camLoop(){
     cam.x+= (tx*0.9-cam.x)*0.5; cam.y+=(ty*0.55-cam.y)*0.5; cam.seen=now;
     dctx.fillStyle='#5a93ee'; dctx.beginPath(); dctx.arc(tip.x*dotC.width,tip.y*dotC.height,9,0,Math.PI*2); dctx.fill();
   }
-  fieldsFrame(lm);
+  fieldsFrame(res.landmarks||[]);
 }
 camBtn.addEventListener('click',()=>{ if(cam.on){camStop();camState.textContent='Camera off. Tap to track your finger again.';logLine('Camera tracking off','');} else camStart(); });
 
@@ -617,14 +614,12 @@ addEventListener('pointerdown',function once(e){
 autoStart();
 
 
-// ---------------- visual field test (camera). He fixates on your nose; you present a hand in one of his four
-// quadrants and wiggle a finger ("tell me when you see it move") or hold up fingers ("how many fingers?").
-// Left hemisphere stroke = right homonymous hemianopia: nothing in his right field is seen.
-const fields={on:false,lastActivity:0,askedCount:-99,quad:null,quadSince:0,lastKey:null,lastResp:-99,
-  hist:[],wig:0,cnt:0,cntSince:0,cntStable:0,readout:'',lostAt:0};
-const QNAME={UL:'upper left',UR:'upper right',LL:'lower left',LR:'lower right'};
+// ---------------- visual field test (camera). He fixates on your nose; you hold up both hands, one in each of
+// his visual fields, and wiggle fingers on one side (or both). He says which side moved: "Left", "Right" or "Both".
+// Left hemisphere stroke = right homonymous hemianopia: movement in his right field is never seen.
+const fields={on:false,lastActivity:0,lastResp:-99,readout:'',hands:{},episode:null};
 function fieldsStart(source){
-  fields.on=true; fields.lastActivity=now; fields.quad=null; fields.lastKey=null; fields.hist=[];
+  fields.on=true; fields.lastActivity=now; fields.hands={}; fields.episode=null;
   logLine('Visual fields: look at my nose',source);
   document.querySelectorAll('#cmds button').forEach(b=>b.classList.toggle('active',b.dataset.cmd==='fields'));
   if(source)setTimeout(()=>say('ok'),200);
@@ -633,56 +628,53 @@ function fieldsStart(source){
 function fieldsStop(why){ if(!fields.on)return; fields.on=false;
   document.querySelectorAll('#cmds button[data-cmd=fields]').forEach(b=>b.classList.remove('active'));
   if(why==='timeout')logLine('Visual fields ended','');}
-function seenIn(q){ return !(stroke && q && q[1]==='R'); }   // q[1] is his side
-function respond(id,label){ fields.lastResp=now; fields.lastActivity=now; logLine(label,''); say(id); }
+const seesSide=side=>!(stroke&&side==='R');    // his right field is blind after a left hemisphere stroke
 function fieldsSeeAsk(source){
   if(!fields.on)fieldsStart('');
-  logLine('Do you see my finger?',source); fields.lastActivity=now;
-  const q=(now-cam.seen)<0.5?fields.quad:null;
-  if(!q){setTimeout(()=>say('unsure'),250);return;}
-  setTimeout(()=>say(seenIn(q)?'fv_yes':'fv_nosee'),300);
+  logLine('Do you see my fingers?',source); fields.lastActivity=now;
+  const sides=Object.keys(fields.hands).filter(k=>now-fields.hands[k].seen<0.5);
+  if(!sides.length){setTimeout(()=>say('unsure'),250);return;}
+  setTimeout(()=>say(sides.some(seesSide)?'fv_yes':'fv_nosee'),300);
 }
 function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
-function fieldsFrame(lm){
+function fieldsFrame(all){
   if(!fields.on)return;
-  if(!lm){ if(fields.quad&&now-fields.lostAt>0.6){fields.quad=null;fields.hist=[];} if(!fields.lostAt)fields.lostAt=now; return; }
-  fields.lostAt=0;
-  const w=lm[0], c=lm[9], size=Math.max(0.03,dist(w,c));
-  // quadrant from HIS point of view (camera image is not mirrored: image-left is his left)
-  const q=(c.y<0.5?'U':'L')+(c.x<0.5?'L':'R');
-  if(q!==fields.quad){fields.quad=q;fields.quadSince=now;fields.hist=[];fields.wig=0;}
-  // extended fingers (index..pinky): tip clearly farther from the wrist than its middle joint
-  let n=0; const ext=[];
-  for(const [tip,pip] of [[8,6],[12,10],[16,14],[20,18]]){ if(dist(lm[tip],w)>dist(lm[pip],w)*1.12){n++;ext.push(tip);} }
-  if(n!==fields.cnt){fields.cnt=n;fields.cntSince=now;}
-  // wiggle: fingertips moving relative to the knuckles while the hand itself stays put
-  const rel=[8,12,16,20].map(t=>[(lm[t].x-c.x)/size,(lm[t].y-c.y)/size]);
-  fields.hist.push({t:now,rel,cx:c.x/size,cy:c.y/size}); while(fields.hist.length&&now-fields.hist[0].t>0.6)fields.hist.shift();
-  if(fields.hist.length>6){
-    const fm=[0,0,0,0]; let hm=0; for(let i=1;i<fields.hist.length;i++){const a=fields.hist[i-1],b=fields.hist[i];
-      for(let k=0;k<4;k++)fm[k]+=Math.hypot(b.rel[k][0]-a.rel[k][0],b.rel[k][1]-a.rel[k][1]);
-      hm+=Math.hypot(b.cx-a.cx,b.cy-a.cy);}
-    const span=fields.hist[fields.hist.length-1].t-fields.hist[0].t||1;
-    fields.wig=Math.max(...fm)/span - 0.5*(hm/span);   // busiest fingertip's travel per second (in hand-sizes), minus whole-hand motion
+  // one hand per side of HIS view (camera image is not mirrored: image-left is his left)
+  for(const lm of all){
+    const w=lm[0], c=lm[9], size=Math.max(0.03,dist(w,c)), side=c.x<0.5?'L':'R';
+    let h=fields.hands[side]; if(!h||now-h.seen>0.6)h=fields.hands[side]={hist:[],wig:0,since:now,seen:now,moving:false,upper:true};
+    h.seen=now; h.upper=c.y<0.5;
+    const rel=[8,12,16,20].map(t=>[(lm[t].x-c.x)/size,(lm[t].y-c.y)/size]);
+    h.hist.push({t:now,rel,cx:c.x/size,cy:c.y/size}); while(h.hist.length&&now-h.hist[0].t>0.6)h.hist.shift();
+    if(h.hist.length>6){
+      const fm=[0,0,0,0]; let hm=0; for(let i=1;i<h.hist.length;i++){const a=h.hist[i-1],b=h.hist[i];
+        for(let k=0;k<4;k++)fm[k]+=Math.hypot(b.rel[k][0]-a.rel[k][0],b.rel[k][1]-a.rel[k][1]);
+        hm+=Math.hypot(b.cx-a.cx,b.cy-a.cy);}
+      const span=h.hist[h.hist.length-1].t-h.hist[0].t||1;
+      h.wig=Math.max(...fm)/span-0.5*(hm/span);   // busiest fingertip travel per second (hand-sizes) minus whole-hand motion
+    }
+    const was=h.moving; h.moving=h.wig>(was?0.8:1.2);   // a little hysteresis so one wiggle is one event
+    if(h.moving&&!was)h.movingSince=now;
+    if(!h.moving&&was)h.stoppedAt=now;
   }
-  const wiggling=fields.wig>1.2;
-  const settled=now-fields.quadSince>0.35;
-  fields.readout=`Hand in his ${QNAME[q]} · ${n} finger${n===1?'':'s'}${wiggling?' · wiggling':''}`;
-  if(!settled||speech.on||now-fields.lastResp<1.1)return;
-  const vis=seenIn(q), tag=`His ${QNAME[q]}`;
-  // counting answer (after "how many fingers?")
-  if(now-fields.askedCount<15 && n>=1 && n<=4 && now-fields.cntSince>0.7 && !wiggling){
-    const key=q+'c'+n; if(fields.lastKey===key)return; fields.lastKey=key;
-    if(vis)respond('fv_'+['','one','two','three','four'][n],`${tag}: ${n} finger${n>1?'s':''} · answered ${n}`);
-    else respond('fv_nosee',`${tag}: ${n} finger${n>1?'s':''} · not seen`);
-    return;
+  for(const k of Object.keys(fields.hands))if(now-fields.hands[k].seen>0.6){fields.hands[k].moving=false;}
+  const H=fields.hands, sideTxt=k=>H[k]&&now-H[k].seen<0.5?(H[k].moving?'wiggling':'still'):'not seen';
+  fields.readout=`His left: ${sideTxt('L')} · his right: ${sideTxt('R')}`;
+  const moving=['L','R'].filter(k=>H[k]&&H[k].moving&&now-H[k].seen<0.5);
+  // an episode starts when any side begins wiggling; wait a beat so a two-handed wiggle counts as "both"
+  if(!fields.episode&&moving.length){fields.episode={t0:now,sides:new Set(moving),answered:false};}
+  const ep=fields.episode; if(!ep)return;
+  moving.forEach(k=>ep.sides.add(k));
+  if(!ep.answered&&now-ep.t0>0.45&&!speech.on){
+    ep.answered=true; fields.lastActivity=now; fields.lastResp=now;
+    const shown=[...ep.sides].sort(), seen=shown.filter(seesSide);
+    const where=shown.length===2?'both sides':`his ${shown[0]==='L'?'left':'right'}`;
+    let id=null; if(seen.length===2)id='fv_both'; else if(seen.length===1)id=seen[0]==='L'?'fv_left':'fv_right';
+    if(id){logLine(`Wiggle ${where} · answered "${LINES[id][stroke?'s':'n'].replace(/\.+$/,'')}"`,'');say(id);}
+    else logLine(`Wiggle ${where} · no response`,'');
   }
-  // movement answer
-  if(wiggling){
-    const key=q+'w'; if(fields.lastKey===key)return; fields.lastKey=key;
-    if(vis)respond(Math.random()<0.5?'fv_yes':'fv_now',`${tag}: finger moving · seen`);
-    else {fields.lastResp=now;fields.lastActivity=now;logLine(`${tag}: finger moving · no response`,'');}
-  }
+  // episode ends once every hand has been still for a moment
+  if(!moving.length&&now-Math.max(...Object.values(H).map(h=>h.stoppedAt||0),ep.t0)>0.6)fields.episode=null;
 }
 
 // ---------------- speech: recorded clips (voice/<line>_<normal|stroke>.mp3) with the browser voice as a fallback
@@ -700,10 +692,9 @@ const LINES={
   sorry:{n:"Sorry, what was that?",s:"What...?"},
   fv_yes:{n:"Yes.",s:"Yeah."},
   fv_now:{n:"Now.",s:"Now."},
-  fv_one:{n:"One.",s:"One."},
-  fv_two:{n:"Two.",s:"Two."},
-  fv_three:{n:"Three.",s:"Three."},
-  fv_four:{n:"Four.",s:"Four."},
+  fv_left:{n:"Left.",s:"Left."},
+  fv_right:{n:"Right.",s:"Right."},
+  fv_both:{n:"Both.",s:"Both."},
   fv_nosee:{n:"I don't see anything.",s:"I... don't... see... anything."},
   unsure:{n:"I'm not sure.",s:"I'm... not... sure."},
   hospital:{n:"Do you think I should?",s:"You... think... I should?"},
