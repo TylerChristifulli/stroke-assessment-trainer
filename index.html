@@ -368,7 +368,7 @@ function tick(ts){
   C.catch=f(C.catch,catchv,14);C.swallow=f(C.swallow,swallowv,20);
   C.droop=strokeAmt;
   C.slL=f(C.slL,tlL,9);C.slR=f(C.slR,tlR,9);C.sjaw=f(C.sjaw,tjaw,9);
-  {const sp=M.direct?45:11; C.jaw=f(C.jaw,M.jaw,sp);C.wide=f(C.wide,M.wide,sp*.8);C.round=f(C.round,M.round,sp*.8);C.press=f(C.press,M.press,sp);C.fv=f(C.fv,M.fv,sp);C.lips=f(C.lips,M.lips,sp);C.tongue=f(C.tongue,M.tongue,sp*.8);}
+  {const sp=M.direct?32:11; C.jaw=f(C.jaw,M.jaw,sp);C.wide=f(C.wide,M.wide,sp*.8);C.round=f(C.round,M.round,sp*.8);C.press=f(C.press,M.press,sp);C.fv=f(C.fv,M.fv,sp);C.lips=f(C.lips,M.lips,sp);C.tongue=f(C.tongue,M.tongue,sp*.8);}
 
   applyRig(H.p,Cc.p);
   updateTarget();
@@ -679,11 +679,19 @@ function speechFrame(dt){
     else amp=a.paused?0:0.5+0.5*Math.abs(Math.sin(now*13));
     // steady clock: audio.currentTime can update in coarse steps, so run our own and resync
     if(!a.paused){speech.tc+=dt; if(Math.abs(a.currentTime-speech.tc)>0.12)speech.tc=a.currentTime;}
-    const cues=CUES&&CUES[speech.key];
-    if(cues){
-      speech.amp+=(amp-speech.amp)*Math.min(1,dt*12);
-      const P=cuePose(cues,speech.tc+0.02,0.032), k=stroke?0.72:1;
-      return {jaw:P.jaw*(stroke?0.75:1)*(0.9+0.1*speech.amp), wide:P.wide*k, round:P.round*k, press:P.press, fv:P.fv*k, lips:P.lips*k, tongue:P.tongue*k, amp:speech.amp, direct:true};
+    const L=CUES&&CUES[speech.key];
+    if(L){
+      // jaw rides the clip's own loudness curve (precomputed, 100 per second) so it opens on every syllable and shuts in pauses;
+      // the chart shapes from Rhubarb only flavour the lips (wide, round, press, F/V, tongue)
+      const lat=(a._an&&actx)?((actx.outputLatency||0)+(actx.baseLatency||0)):0;
+      const tt=Math.max(0,speech.tc-lat+0.04);
+      const samp=(arr,sc)=>{if(!arr)return null;const fi=tt*100,i=Math.floor(fi),fr=fi-i;const v0=arr[Math.min(i,arr.length-1)]||0,v1=arr[Math.min(i+1,arr.length-1)]||0;return (v0+(v1-v0)*fr)/sc;};
+      const env=samp(L.env,99)??amp, vox=samp(L.vox,9)??1;
+      const P=cuePose(L.cues||L,tt,0.045), k=stroke?0.72:1;
+      speech.amp=env;
+      return {jaw:Math.min(1,env*(0.45+0.8*P.jaw))*(stroke?0.75:1), lips:vox*Math.max(P.lips,0.55*env)*k,
+        wide:P.wide*vox*k, round:P.round*vox*k, fv:P.fv*vox*(1-0.6*env)*k, tongue:P.tongue*vox*k,
+        press:P.press*vox*(1-env), amp:env, direct:true};
     }
     const d=a.duration; ci=charAt(d&&isFinite(d)?clamp(a.currentTime/d,0,1):0);
   }else if(speech.src==='tts'){
