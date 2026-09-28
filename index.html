@@ -368,7 +368,7 @@ function tick(ts){
   C.catch=f(C.catch,catchv,14);C.swallow=f(C.swallow,swallowv,20);
   C.droop=strokeAmt;
   C.slL=f(C.slL,tlL,9);C.slR=f(C.slR,tlR,9);C.sjaw=f(C.sjaw,tjaw,9);
-  {const sp=M.direct?32:11; C.jaw=f(C.jaw,M.jaw,sp);C.wide=f(C.wide,M.wide,sp*.8);C.round=f(C.round,M.round,sp*.8);C.press=f(C.press,M.press,sp);C.fv=f(C.fv,M.fv,sp);C.lips=f(C.lips,M.lips,sp);C.tongue=f(C.tongue,M.tongue,sp*.8);}
+  {const sp=M.direct?32:11; C.jaw=f(C.jaw,M.jaw,sp);C.wide=f(C.wide,M.wide,sp*.8);C.round=f(C.round,M.round,sp*.8);C.press=f(C.press,M.press,M.direct?45:sp);C.fv=f(C.fv,M.fv,sp);C.lips=f(C.lips,M.lips,sp);C.tongue=f(C.tongue,M.tongue,sp*.8);}
 
   applyRig(H.p,Cc.p);
   updateTarget();
@@ -644,7 +644,7 @@ function say(id){
   const fallback=()=>{if(fell)return;fell=true;if(speech.audio===a){speech.audio=null;}ttsSay(text,id);};
   a.addEventListener('error',fallback,{once:true});
   a.addEventListener('ended',()=>{if(speech.audio===a)endSpeech();});
-  speech.audio=a; speech.src='clip'; speech.on=true; speech.peak=0.05; speech.key=`${id}_${stroke?'stroke':'normal'}`; speech.tc=0;
+  speech.audio=a; speech.src='clip'; speech.on=true; speech.peak=0.05; speech.key=`${id}_${stroke?'stroke':'normal'}`; speech.tc=0; speech.lastCT=-1; speech.lastCTat=now;
   try{ if(actx&&actx.state==='running'&&location.protocol!=='file:'){const n=actx.createMediaElementSource(a);n.connect(analyser);a._an=true;} }catch(e){}
   a.play().catch(err=>{
     if(err&&err.name==='NotAllowedError'){speech.on=false;speech.queued=id;tapEl.hidden=false;sayEl.classList.remove('on');}
@@ -678,20 +678,27 @@ function speechFrame(dt){
     if(a._an&&actx.state==='running'){analyser.getFloatTimeDomainData(abuf);let s2=0;for(let i=0;i<abuf.length;i++)s2+=abuf[i]*abuf[i];const rms=Math.sqrt(s2/abuf.length);speech.peak=Math.max(speech.peak*0.997,rms);amp=clamp((rms-0.012)/(speech.peak*0.8-0.012),0,1);}
     else amp=a.paused?0:0.5+0.5*Math.abs(Math.sin(now*13));
     // steady clock: audio.currentTime can update in coarse steps, so run our own and resync
-    if(!a.paused){speech.tc+=dt; if(Math.abs(a.currentTime-speech.tc)>0.12)speech.tc=a.currentTime;}
+    const ct=a.currentTime;
+    if(ct!==speech.lastCT){speech.lastCT=ct;speech.lastCTat=now;}
+    speech.tc=(a.paused||ct===0)?ct:ct+Math.min(now-(speech.lastCTat||now),0.1);
     const L=CUES&&CUES[speech.key];
     if(L){
       // jaw rides the clip's own loudness curve (precomputed, 100 per second) so it opens on every syllable and shuts in pauses;
       // the chart shapes from Rhubarb only flavour the lips (wide, round, press, F/V, tongue)
       const lat=(a._an&&actx)?((actx.outputLatency||0)+(actx.baseLatency||0)):0;
-      const tt=Math.max(0,speech.tc-lat+0.04);
+      const tt=Math.max(0,speech.tc-lat+0.03);
       const samp=(arr,sc)=>{if(!arr)return null;const fi=tt*100,i=Math.floor(fi),fr=fi-i;const v0=arr[Math.min(i,arr.length-1)]||0,v1=arr[Math.min(i+1,arr.length-1)]||0;return (v0+(v1-v0)*fr)/sc;};
       const env=samp(L.env,99)??amp, vox=samp(L.vox,9)??1;
-      const P=cuePose(L.cues||L,tt,0.045), k=stroke?0.72:1;
+      const cues=L.cues||L, P=cuePose(cues,tt,0.045), Pm=cuePose(cues,tt,0.022), k=stroke?0.72:1;
+      const pr=Math.min(1,Pm.press*1.25)*vox, open=1-pr;   // M B P: lips shut, whatever the loudness says
       speech.amp=env;
-      return {jaw:Math.min(1,env*(0.45+0.8*P.jaw))*(stroke?0.75:1), lips:vox*Math.max(P.lips,0.55*env)*k,
-        wide:P.wide*vox*k, round:P.round*vox*k, fv:P.fv*vox*(1-0.6*env)*k, tongue:P.tongue*vox*k,
-        press:P.press*vox*(1-env), amp:env, direct:true};
+      // lip shapes relax as the voice fades, so he never holds a bared-teeth shape in a pause;
+      // tiny lip gaps are dropped (a sliver of teeth between flat lips reads as a grimace)
+      const g=ss(0.02,0.25,env), fv=P.fv*vox*(1-0.6*env)*k*open;
+      const lraw=vox*Math.max(P.lips*g,0.55*env)*k*open*(1-0.7*fv);
+      return {jaw:Math.min(1,env*(0.45+0.8*P.jaw))*(stroke?0.75:1)*open, lips:clamp((lraw-0.12)/0.88,0,1),
+        wide:P.wide*vox*g*k*open, round:P.round*vox*k, fv, tongue:P.tongue*vox*k*open,
+        press:pr, amp:env, direct:true};
     }
     const d=a.duration; ci=charAt(d&&isFinite(d)?clamp(a.currentTime/d,0,1):0);
   }else if(speech.src==='tts'){
