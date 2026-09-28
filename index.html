@@ -245,6 +245,9 @@ function onLoad(g){
     const pw=new THREE.Quaternion(); b.parent.getWorldQuaternion(pw);
     boneRest[n]={q0:b.quaternion.clone(),pw,pwi:pw.clone().invert()};
   }
+  // shirt-coloured backing behind the torso: covers the small see-through gaps where the arms meet the body
+  {const bk=new THREE.Mesh(new THREE.PlaneGeometry(1.7,0.62),new THREE.MeshBasicMaterial({color:0x22395a}));
+   bk.position.set(0,0.3,-0.56); scene.add(bk);}
   resize();
   {const ld=document.getElementById('loading'); if(ld) ld.remove();}
   ready=true;
