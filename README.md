@@ -19,7 +19,10 @@ FILES
   voice/            22 recorded answers: <line>_normal.mp3 and <line>_stroke.mp3
 Keep everything in the same folder. Open index.html.
 To change a line, replace its mp3 (same name) and edit the matching text in LINES in
-index.html so the captions and lip sync match. A missing clip falls back to the browser voice.
+index.html so the captions match. voice/lipsync.json holds the mouth timing for each
+clip (made with Rhubarb Lip Sync from the audio). A replaced clip needs its timing
+regenerated; until then it falls back to rougher letter-based lip sync.
+A missing clip falls back to the browser voice.
 
 HOSTING NOTES FOR THE SANDBOX
 1. Serve it over HTTPS. Browsers only allow the microphone and camera on secure pages.

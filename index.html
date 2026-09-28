@@ -590,7 +590,11 @@ const LINES={
   likethis:{n:"Like this?",s:"Like... this?"},
   sorry:{n:"Sorry, what was that?",s:"What...?"},
 };
-let CUES=null; fetch('voice/lipsync.json').then(r=>r.ok?r.json():null).then(j=>{CUES=j;}).catch(()=>{});
+// clips live in voice/ (or next to index.html if they were uploaded flat)
+let CUES=null, VBASE='voice/';
+fetch('voice/lipsync.json').then(r=>{if(!r.ok)throw 0;return r.json();})
+  .catch(()=>fetch('lipsync.json').then(r=>{if(!r.ok)throw 0;VBASE='';return r.json();}))
+  .then(j=>{CUES=j;}).catch(()=>{});
 // Rhubarb mouth shapes -> our shape keys
 const RS={A:{jaw:0,wide:0,round:0,press:1,fv:0},B:{jaw:.16,wide:.45,round:0,press:0,fv:0},C:{jaw:.45,wide:.3,round:0,press:0,fv:0},
   D:{jaw:.8,wide:.15,round:0,press:0,fv:0},E:{jaw:.4,wide:0,round:.45,press:0,fv:0},F:{jaw:.16,wide:0,round:.95,press:0,fv:0},
@@ -624,7 +628,7 @@ const VT={A:{jaw:.8,wide:.1,round:0,press:0,fv:0},E:{jaw:.35,wide:.8,round:0,pre
 function say(id){
   const L=LINES[id]; if(!L)return;
   if(speech.on)stopSpeech();
-  const text=stroke?L.s:L.n; const file=`voice/${id}_${stroke?'stroke':'normal'}.mp3`;
+  const text=stroke?L.s:L.n; const file=`${VBASE}${id}_${stroke?'stroke':'normal'}.mp3`;
   speech.text=text; speech.cw=weights(text); speech.q=/\?$/.test(text.trim());
   sayEl.textContent=text; sayEl.classList.add('on');
   ensureAudio();
