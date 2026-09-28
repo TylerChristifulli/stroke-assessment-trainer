@@ -613,7 +613,7 @@ const LINES={
 let CUES=null, VBASE='voice/';
 fetch('voice/lipsync.json').then(r=>{if(!r.ok)throw 0;return r.json();})
   .catch(()=>fetch('lipsync.json').then(r=>{if(!r.ok)throw 0;VBASE='';return r.json();}))
-  .then(j=>{CUES=j;}).catch(()=>{});
+  .then(j=>{CUES=j;}).catch(()=>{}).finally(()=>{ensureAudio();preloadClips();});
 // Rhubarb mouth shapes -> our shape keys
 const RS={ // Preston Blair mouth chart, as Rhubarb names them
   A:{jaw:0,wide:0,round:0,press:1,fv:0,lips:0,tongue:0},          // M B P: lips pressed
@@ -641,10 +641,9 @@ const sayEl=document.getElementById('say'),startCard=document.getElementById('st
 // Browsers only allow sound after the person interacts with the page. If this browser already allows it
 // (e.g. an embed that passes autoplay through), skip the card; otherwise one "Start exam" tap unlocks it for the whole session.
 let audioUnlocked=false;
-function autoplayAllowed(){try{if(navigator.getAutoplayPolicy)return navigator.getAutoplayPolicy('mediaelement')==='allowed';}catch(e){}return false;}
+function autoplayAllowed(){try{if(actx&&actx.state==='running')return true;if(navigator.getAutoplayPolicy)return navigator.getAutoplayPolicy('audiocontext')==='allowed';}catch(e){}return false;}
 function unlockAudio(){
-  ensureAudio();
-  try{const a=new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=');a.play().catch(()=>{});}catch(e){}
+  ensureAudio(); if(actx&&actx.state!=='running')actx.resume().catch(()=>{});
   audioUnlocked=true; startCard.hidden=true;
 }
 function showStart(){ if(!audioUnlocked&&!autoplayAllowed()) startCard.hidden=false; else audioUnlocked=true; }
@@ -663,24 +662,37 @@ function weights(t){const w=[];let tot=0;for(let i=0;i<t.length;i++){const ch=t[
 function charAt(p){const W=speech.cw;const target=p*W.tot;let lo=0,hi=W.w.length-1;while(lo<hi){const m=(lo+hi)>>1;if(W.w[m]<target)lo=m+1;else hi=m;}return lo;}
 function vclass(ch){ch=(ch||' ').toLowerCase();if(ch==='a')return 'A';if('eiy'.includes(ch))return 'E';if('ouw'.includes(ch))return 'O';if('mbp'.includes(ch))return 'M';if('fv'.includes(ch))return 'F';if(ch==='l')return 'L';if(/[a-z]/.test(ch))return 'C';return '_';}
 const VT={A:RS.D,E:RS.B,O:RS.F,M:RS.A,F:RS.G,C:RS.C,L:RS.H,_:RS.X};
+// clips play through one Web Audio context: once a tap has unlocked it, it stays unlocked for the whole
+// session in every browser (new <audio> elements can get blocked again, especially in Safari)
+const BUFS={};
+function getBuf(file){
+  if(!BUFS[file]) BUFS[file]=fetch(file).then(r=>{if(!r.ok)throw new Error(r.status);return r.arrayBuffer();})
+    .then(ab=>new Promise((res,rej)=>actx.decodeAudioData(ab,res,rej)));
+  BUFS[file].catch(()=>{delete BUFS[file];});
+  return BUFS[file];
+}
+function preloadClips(){ if(!actx)return; for(const id in LINES)for(const m of ['normal','stroke'])getBuf(`${VBASE}${id}_${m}.mp3`).catch(()=>{}); }
 function say(id){
   const L=LINES[id]; if(!L)return;
   if(speech.on)stopSpeech();
   const text=stroke?L.s:L.n; const file=`${VBASE}${id}_${stroke?'stroke':'normal'}.mp3`;
+  const key=`${id}_${stroke?'stroke':'normal'}`;
   speech.text=text; speech.cw=weights(text); speech.q=/\?$/.test(text.trim());
   sayEl.textContent=text; sayEl.classList.add('on');
   ensureAudio();
-  const a=new Audio(file); a.preload='auto';
-  let fell=false;
-  const fallback=()=>{if(fell)return;fell=true;if(speech.audio===a){speech.audio=null;}ttsSay(text,id);};
-  a.addEventListener('error',fallback,{once:true});
-  a.addEventListener('ended',()=>{if(speech.audio===a)endSpeech();});
-  speech.audio=a; speech.src='clip'; speech.on=true; speech.peak=0.05; speech.key=`${id}_${stroke?'stroke':'normal'}`; speech.tc=0; speech.lastCT=-1; speech.lastCTat=now;
-  try{ if(actx&&actx.state==='running'&&location.protocol!=='file:'){const n=actx.createMediaElementSource(a);n.connect(analyser);a._an=true;} }catch(e){}
-  a.play().catch(err=>{
-    if(err&&err.name==='NotAllowedError'){speech.on=false;speech.queued=id;audioUnlocked=false;startCard.hidden=false;sayEl.classList.remove('on');}
-    else fallback();
-  });
+  speech.audio=null; speech.src='clip'; speech.on=true; speech.peak=0.05; speech.key=key; speech.tc=0; speech.lastCT=-1; speech.lastCTat=now;
+  if(!actx){ttsSay(text,id);return;}
+  const go=()=>getBuf(file).then(buf=>{
+    if(speech.key!==key||!speech.on)return;
+    if(actx.state!=='running'){ // never unlocked in this session: ask for the one tap, then play this line
+      speech.on=false; speech.queued=id; startCard.hidden=false; sayEl.classList.remove('on'); return; }
+    const src=actx.createBufferSource(); src.buffer=buf; src.connect(analyser);
+    const t0=actx.currentTime+0.03; src.start(t0);
+    const h={_an:true,paused:false,duration:buf.duration,get currentTime(){return Math.max(0,actx.currentTime-t0);},pause(){try{src.stop();}catch(e){}this.paused=true;}};
+    src.onended=()=>{if(speech.audio===h){h.paused=true;endSpeech();}};
+    speech.audio=h;
+  }).catch(()=>{ if(speech.key===key&&speech.on) ttsSay(text,id); });
+  if(actx.state!=='running') actx.resume().then(go,go); else go();
 }
 function ttsSay(text,id){
   if(!('speechSynthesis' in window)){endSpeech();return;}
