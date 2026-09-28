@@ -140,6 +140,8 @@ form button{font:600 13px var(--sans);background:var(--glove);color:var(--glove-
         <button data-cmd="right">Look right<span>“look to your right”</span></button>
         <button data-cmd="nod">Can you hear me?<span>“can you hear me”</span></button>
         <button data-cmd="swallow">Swallow<span>“swallow for me”</span></button>
+        <button data-cmd="fields">Visual fields<span>“look at my nose”</span></button>
+        <button data-cmd="count">How many fingers?<span>“how many fingers?”</span></button>
       </div>
     </section>
 
@@ -269,7 +271,12 @@ const DUR={smile:3.4,brows:3.4,close:3.6,follow:7.0,left:3.0,right:3.0,nod:1.8,s
 function run(cmd,source){
   if(!ready)return;
   if(cmd.startsWith('say:')){const id=cmd.slice(4);logLine(ASKLABEL[id]||id,source);say(id);return;}
+  if(cmd==='fields'){fieldsStart(source);return;}
+  if(cmd==='count'){fields.askedCount=now;fields.lastKey=null;logLine('How many fingers?',source);if(!fields.on)fieldsStart('');return;}
+  if(cmd==='seeask'){fieldsSeeAsk(source);return;}
+  if(cmd==='seewhen'){if(!fields.on)fieldsStart('');logLine('Tell me when you see my finger move',source);fields.lastKey=null;fields.lastActivity=now;setTimeout(()=>say('ok'),200);return;}
   if(!DUR[cmd])return;
+  if(fields.on)fieldsStop('');
   if(cmd==='nod')setTimeout(()=>say('hear'),350);
   else if(cmd!=='smile'&&cmd!=='close'&&Math.random()<0.45)say('ok');
   action={name:cmd,t0:now,dur:DUR[cmd]};
@@ -336,7 +343,9 @@ function tick(ts){
   }
 
   // live finger from the webcam (ignored while a command is running)
-  const camLive=cam.on&&!action&&(now-cam.seen)<0.35;
+  if(fields.on){ noDarts=true; gx=stroke?0.1:0; gy=0; targetGaze=null;
+    if(now-fields.lastActivity>75)fieldsStop('timeout'); }
+  const camLive=cam.on&&!action&&!fields.on&&(now-cam.seen)<0.35;
   if(camLive){
     noDarts=true;
     const want=reachable(cam.x,now);
@@ -361,7 +370,7 @@ function tick(ts){
   if(!idle.swallow&&t>idle.swallowAt){idle.swallow=t;}
   if(idle.swallow!==null){swallowv=Math.max(swallowv,blinkCurve((t-idle.swallow)*0.55));if(t-idle.swallow>1.3){idle.swallow=null;idle.swallowAt=t+rnd(16,30);}}
   // head: move-and-settle toward random targets, spring gives arcs and overshoot
-  const H=idle.head,calm=(action&&['follow','left','right'].includes(action.name))?0.35:1;
+  const H=idle.head,calm=(fields.on||(action&&['follow','left','right'].includes(action.name)))?0.35:1;
   if(t>H.next){H.t=[R(rnd(-1.3,1.3))*calm,R(rnd(-1.7,1.7))*calm+R(4)*C.dx,R(rnd(-1.1,1.1))*calm];H.next=t+rnd(0.8,1.9);}
   const Cc=idle.chest;
   if(t>Cc.next){Cc.t=[R(rnd(-.6,.6)),R(rnd(-1.4,1.4)),R(rnd(-1,1))];Cc.next=t+rnd(2.5,4.5);}
@@ -460,6 +469,10 @@ document.getElementById('modeStroke').onclick=()=>setMode(true);
 
 // phrase matching
 const RULES=[
+  ['fields',/\blook at my (nose|face|eyes)\b|\bkeep (your eyes|looking) (on|at)\b|\bstare at (my|me)\b|\bvisual fields?\b|\blook straight at me\b/],
+  ['count',/\bhow many fingers?\b|\bhow many (am i|do you see)\b|\bcount my fingers\b/],
+  ['seewhen',/\btell me when you see\b|\bsay (yes|now) when\b|\blet me know when\b/],
+  ['seeask',/\bdo you see (my|this|the|it|that)\b|\bcan you see (my|this|it|that|the)\b/],
   ['close',/\b(close|shut|squeeze)\b.*\beyes?\b|\beyes?\b.*\b(closed|shut)\b/],
   ['follow',/\b(follow|track|watch)\b.*\b(finger|hand|light|pen)\b|\bfollow me\b/],
   ['left',/\blook\b.*\bleft\b|\bleft\b.*\blook\b/],
@@ -476,9 +489,11 @@ const ASKS=[
   ['day',/\bwhat day\b|\bwhat('?s| is) (the |today'?s )?date\b|\bwhat year\b|\bwhat month\b|\bday (is it|of the week)\b/],
   ['happened',/\bwhat happened\b|\bwhat('?s| is) going on\b|\bwhy did (you|they) call\b|\bwhat brings\b/],
   ['pain',/\b(any|in) pain\b|\bhurts?\b|\bhurting\b/],
+  ['hospital',/\bhospital\b|\bemergency room\b|\bthe er\b|\bcome with us\b|\btake you (in|to)\b|\bgo (in|with us)\b|\btransport(ed)?\b|\bget checked out\b/],
   ['greet',/\b(hi|hey|hello)\b|\bmy name is\b|\bi'?m (a |an |with )?(paramedic|emt|medic|the ambulance|fire)\b/],
 ];
-const ASKLABEL={sorry:'Unclear question',name:'Asked his name',where:'Asked where he is',day:'Asked the day',phrase:'Repeat: old dog, new tricks',happened:'Asked what happened',pain:'Asked about pain',greet:'Greeted him'};
+const ASKLABEL={hospital:'Asked about the hospital',unsure:'Unscripted question',sorry:'Unclear question',name:'Asked his name',where:'Asked where he is',day:'Asked the day',phrase:'Repeat: old dog, new tricks',happened:'Asked what happened',pain:'Asked about pain',greet:'Greeted him'};
+function looksLikeQuestion(t){t=t.trim().toLowerCase();return t.split(/\s+/).length>=3&&/^(what|where|who|whom|whose|how|when|why|which|do|does|did|can|could|are|is|was|were|have|has|had|will|would|should|any|anything|tell me)\b/.test(t);}
 function match(text){const t=' '+text.toLowerCase()+' ';
   for(const [c,re] of RULES)if(c!=='nod'&&re.test(t))return c;
   for(const [c,re] of ASKS)if(c!=='greet'&&re.test(t))return 'say:'+c;
@@ -489,7 +504,7 @@ document.getElementById('typeForm').addEventListener('submit',e=>{
   e.preventDefault();const inp=document.getElementById('typeIn');const c=match(inp.value);
   document.getElementById('heard').textContent=inp.value?`“${inp.value}”`+(c?'':'  (no matching command)'):'';
   if(c)run(c,'typed');
-  else if(/\?\s*$|^\s*(what|where|who|how|when|why|do|does|did|can|are|is)\b/i.test(inp.value))run('say:sorry','typed');
+  else if(/\?\s*$|^\s*(what|where|who|how|when|why|do|does|did|can|are|is)\b/i.test(inp.value))run('say:unsure','typed');
   inp.value='';
 });
 
@@ -507,6 +522,7 @@ function startRec(){
       if(now<speech.muteUntil){handled.add(i);continue;}
       const c=match(txt);
       if(c&&!(c===lastCmd&&now-lastAt<2.5)){handled.add(i);lastCmd=c;lastAt=now;run(c,'voice');}
+      else if(!c&&ev.results[i].isFinal&&!speech.on&&looksLikeQuestion(txt)){handled.add(i);lastCmd='say:unsure';lastAt=now;run('say:unsure','voice');}
     }
   };
   rec.onerror=(e)=>{
@@ -524,7 +540,9 @@ const camBtn=document.getElementById('camBtn'),camState=document.getElementById(
 const trkEl=document.getElementById('trk'),trkTxt=document.getElementById('trkTxt'),camPeek=document.getElementById('camPeek');
 camPeek.addEventListener('click',()=>{const off=camWrap.classList.toggle('offscreen');camPeek.textContent=off?'Show camera':'Hide camera';});
 let trkSeen=null;
-function trkUpdate(){const seen=cam.on&&(now-cam.seen)<0.35;if(seen!==trkSeen){trkSeen=seen;trkEl.classList.toggle('seen',seen);trkTxt.textContent=seen?'Finger found, he is tracking it':'Looking for your finger';}}
+function trkUpdate(){const seen=cam.on&&(now-cam.seen)<0.35;
+  if(fields.on){trkEl.classList.toggle('seen',seen);trkTxt.textContent=seen?fields.readout:'Visual fields: hold your hand up in one of his quadrants';trkSeen=null;return;}
+  if(seen!==trkSeen){trkSeen=seen;trkEl.classList.toggle('seen',seen);trkTxt.textContent=seen?'Finger found, he is tracking it':'Looking for your finger';}}
 const vid=document.getElementById('camVid'),dotC=document.getElementById('camDot'),dctx=dotC.getContext('2d');
 let hands=null,stream=null,lastVT=-1;
 const MP='https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
@@ -567,6 +585,7 @@ function camLoop(){
     cam.x+= (tx*0.9-cam.x)*0.5; cam.y+=(ty*0.55-cam.y)*0.5; cam.seen=now;
     dctx.fillStyle='#5a93ee'; dctx.beginPath(); dctx.arc(tip.x*dotC.width,tip.y*dotC.height,9,0,Math.PI*2); dctx.fill();
   }
+  fieldsFrame(lm);
 }
 camBtn.addEventListener('click',()=>{ if(cam.on){camStop();camState.textContent='Camera off. Tap to track your finger again.';logLine('Camera tracking off','');} else camStart(); });
 
@@ -598,6 +617,74 @@ addEventListener('pointerdown',function once(e){
 autoStart();
 
 
+// ---------------- visual field test (camera). He fixates on your nose; you present a hand in one of his four
+// quadrants and wiggle a finger ("tell me when you see it move") or hold up fingers ("how many fingers?").
+// Left hemisphere stroke = right homonymous hemianopia: nothing in his right field is seen.
+const fields={on:false,lastActivity:0,askedCount:-99,quad:null,quadSince:0,lastKey:null,lastResp:-99,
+  hist:[],wig:0,cnt:0,cntSince:0,cntStable:0,readout:'',lostAt:0};
+const QNAME={UL:'upper left',UR:'upper right',LL:'lower left',LR:'lower right'};
+function fieldsStart(source){
+  fields.on=true; fields.lastActivity=now; fields.quad=null; fields.lastKey=null; fields.hist=[];
+  logLine('Visual fields: look at my nose',source);
+  document.querySelectorAll('#cmds button').forEach(b=>b.classList.toggle('active',b.dataset.cmd==='fields'));
+  if(source)setTimeout(()=>say('ok'),200);
+  if(!cam.on){camState.textContent='Turn on the camera to present fingers for the visual field test.';}
+}
+function fieldsStop(why){ if(!fields.on)return; fields.on=false;
+  document.querySelectorAll('#cmds button[data-cmd=fields]').forEach(b=>b.classList.remove('active'));
+  if(why==='timeout')logLine('Visual fields ended','');}
+function seenIn(q){ return !(stroke && q && q[1]==='R'); }   // q[1] is his side
+function respond(id,label){ fields.lastResp=now; fields.lastActivity=now; logLine(label,''); say(id); }
+function fieldsSeeAsk(source){
+  if(!fields.on)fieldsStart('');
+  logLine('Do you see my finger?',source); fields.lastActivity=now;
+  const q=(now-cam.seen)<0.5?fields.quad:null;
+  if(!q){setTimeout(()=>say('unsure'),250);return;}
+  setTimeout(()=>say(seenIn(q)?'fv_yes':'fv_nosee'),300);
+}
+function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
+function fieldsFrame(lm){
+  if(!fields.on)return;
+  if(!lm){ if(fields.quad&&now-fields.lostAt>0.6){fields.quad=null;fields.hist=[];} if(!fields.lostAt)fields.lostAt=now; return; }
+  fields.lostAt=0;
+  const w=lm[0], c=lm[9], size=Math.max(0.03,dist(w,c));
+  // quadrant from HIS point of view (camera image is not mirrored: image-left is his left)
+  const q=(c.y<0.5?'U':'L')+(c.x<0.5?'L':'R');
+  if(q!==fields.quad){fields.quad=q;fields.quadSince=now;fields.hist=[];fields.wig=0;}
+  // extended fingers (index..pinky): tip clearly farther from the wrist than its middle joint
+  let n=0; const ext=[];
+  for(const [tip,pip] of [[8,6],[12,10],[16,14],[20,18]]){ if(dist(lm[tip],w)>dist(lm[pip],w)*1.12){n++;ext.push(tip);} }
+  if(n!==fields.cnt){fields.cnt=n;fields.cntSince=now;}
+  // wiggle: fingertips moving relative to the knuckles while the hand itself stays put
+  const rel=[8,12,16,20].map(t=>[(lm[t].x-c.x)/size,(lm[t].y-c.y)/size]);
+  fields.hist.push({t:now,rel,cx:c.x/size,cy:c.y/size}); while(fields.hist.length&&now-fields.hist[0].t>0.6)fields.hist.shift();
+  if(fields.hist.length>6){
+    const fm=[0,0,0,0]; let hm=0; for(let i=1;i<fields.hist.length;i++){const a=fields.hist[i-1],b=fields.hist[i];
+      for(let k=0;k<4;k++)fm[k]+=Math.hypot(b.rel[k][0]-a.rel[k][0],b.rel[k][1]-a.rel[k][1]);
+      hm+=Math.hypot(b.cx-a.cx,b.cy-a.cy);}
+    const span=fields.hist[fields.hist.length-1].t-fields.hist[0].t||1;
+    fields.wig=Math.max(...fm)/span - 0.5*(hm/span);   // busiest fingertip's travel per second (in hand-sizes), minus whole-hand motion
+  }
+  const wiggling=fields.wig>1.2;
+  const settled=now-fields.quadSince>0.35;
+  fields.readout=`Hand in his ${QNAME[q]} · ${n} finger${n===1?'':'s'}${wiggling?' · wiggling':''}`;
+  if(!settled||speech.on||now-fields.lastResp<1.1)return;
+  const vis=seenIn(q), tag=`His ${QNAME[q]}`;
+  // counting answer (after "how many fingers?")
+  if(now-fields.askedCount<15 && n>=1 && n<=4 && now-fields.cntSince>0.7 && !wiggling){
+    const key=q+'c'+n; if(fields.lastKey===key)return; fields.lastKey=key;
+    if(vis)respond('fv_'+['','one','two','three','four'][n],`${tag}: ${n} finger${n>1?'s':''} · answered ${n}`);
+    else respond('fv_nosee',`${tag}: ${n} finger${n>1?'s':''} · not seen`);
+    return;
+  }
+  // movement answer
+  if(wiggling){
+    const key=q+'w'; if(fields.lastKey===key)return; fields.lastKey=key;
+    if(vis)respond(Math.random()<0.5?'fv_yes':'fv_now',`${tag}: finger moving · seen`);
+    else {fields.lastResp=now;fields.lastActivity=now;logLine(`${tag}: finger moving · no response`,'');}
+  }
+}
+
 // ---------------- speech: recorded clips (voice/<line>_<normal|stroke>.mp3) with the browser voice as a fallback
 const LINES={
   greet:{n:"Hey. Thanks for coming.",s:"Hey... thanks... for... com... coming."},
@@ -611,6 +698,15 @@ const LINES={
   ok:{n:"Okay.",s:"Kay."},
   likethis:{n:"Like this?",s:"Like... this?"},
   sorry:{n:"Sorry, what was that?",s:"What...?"},
+  fv_yes:{n:"Yes.",s:"Yeah."},
+  fv_now:{n:"Now.",s:"Now."},
+  fv_one:{n:"One.",s:"One."},
+  fv_two:{n:"Two.",s:"Two."},
+  fv_three:{n:"Three.",s:"Three."},
+  fv_four:{n:"Four.",s:"Four."},
+  fv_nosee:{n:"I don't see anything.",s:"I... don't... see... anything."},
+  unsure:{n:"I'm not sure.",s:"I'm... not... sure."},
+  hospital:{n:"Do you think I should?",s:"You... think... I should?"},
 };
 // clips live in voice/ (or next to index.html if they were uploaded flat)
 let CUES=null, VBASE='voice/';

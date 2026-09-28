@@ -8,6 +8,11 @@ a normal patient and a left hemisphere stroke (right facial droop with forehead 
 leftward gaze deviation, can't look right past midline). Commands can be spoken, tapped
 or typed. Webcam finger tracking lets the patient follow the learner's fingertip.
 
+Visual fields (camera): say "look at my nose" (or tap Visual fields). He fixates on center.
+Hold your hand up in one of his four quadrants and wiggle a finger ("tell me when you see it
+move") or hold up 1 to 4 fingers after asking "how many fingers?". In stroke mode he has a right
+homonymous hemianopia: nothing in his right field is seen. Each stimulus is written to the exam log.
+
 He also talks. Ask his name, where he is, what day it is, what happened, whether anything
 hurts, or have him repeat "You can't teach an old dog new tricks". In stroke mode his
 answers are slow, slurred and word-finding (dysarthria with expressive aphasia). His mouth
