@@ -1,4 +1,4 @@
-Stroke Assessment Trainer (Experimental), v1
+Stroke Assessment Trainer (Experimental), v2
 ============================================
 
 WHAT IT IS
@@ -8,10 +8,18 @@ a normal patient and a left hemisphere stroke (right facial droop with forehead 
 leftward gaze deviation, can't look right past midline). Commands can be spoken, tapped
 or typed. Webcam finger tracking lets the patient follow the learner's fingertip.
 
+He also talks. Ask his name, where he is, what day it is, what happened, whether anything
+hurts, or have him repeat "You can't teach an old dog new tricks". In stroke mode his
+answers are slow, slurred and word-finding (dysarthria with expressive aphasia). His mouth
+is lip-synced to the recorded clips.
+
 FILES
   index.html        the trainer page
-  patient_glb.txt + textures   the patient model, textures and room backdrop (about 12 MB)
-Keep both files in the same folder. Open index.html.
+  patient_glb.txt + textures   the patient model, textures and room backdrop (about 13 MB)
+  voice/            22 recorded answers: <line>_normal.mp3 and <line>_stroke.mp3
+Keep everything in the same folder. Open index.html.
+To change a line, replace its mp3 (same name) and edit the matching text in LINES in
+index.html so the captions and lip sync match. A missing clip falls back to the browser voice.
 
 HOSTING NOTES FOR THE SANDBOX
 1. Serve it over HTTPS. Browsers only allow the microphone and camera on secure pages.

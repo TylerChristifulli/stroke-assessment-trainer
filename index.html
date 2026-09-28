@@ -62,6 +62,9 @@ form button{font:600 13px var(--sans);background:var(--glove);color:var(--glove-
 .beta{display:inline-block;vertical-align:middle;margin-left:8px;font:700 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--stroke);border:1px solid var(--stroke);border-radius:5px;padding:2px 6px}
 .disclaimer{max-width:1280px;margin:18px auto 0;font-size:12.5px;color:var(--ink-dim)}
 .note{font-size:12.5px;color:var(--ink-dim);margin:8px 0 0}
+.say{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);max-width:min(560px,90%);font:500 15px var(--sans);text-align:center;padding:8px 14px;border-radius:8px;background:rgba(18,21,24,.78);color:var(--ink);opacity:0;transition:opacity .25s;pointer-events:none}
+.say.on{opacity:1}
+.tap{position:absolute;right:12px;top:12px;font:600 12px var(--sans);padding:6px 10px;border-radius:6px;background:var(--glove);color:var(--glove-ink);border:0;cursor:pointer}
 </style>
 
 <div class="wrap">
@@ -78,6 +81,8 @@ form button{font:600 13px var(--sans);background:var(--glove);color:var(--glove-
     <div class="vignette"></div>
     <div class="target" id="target"></div>
     <div class="chip" id="chip">Normal exam</div>
+    <div class="say" id="say" aria-live="polite"></div>
+    <button class="tap" id="tapAudio" hidden>Tap to hear him</button>
     <div class="loading" id="loading">Loading patient…</div>
   </div>
 
@@ -123,6 +128,19 @@ form button{font:600 13px var(--sans);background:var(--glove);color:var(--glove-
         <button data-cmd="nod">Can you hear me?<span>“can you hear me”</span></button>
         <button data-cmd="swallow">Swallow<span>“swallow for me”</span></button>
       </div>
+    </section>
+
+    <section class="card">
+      <h2>Ask him</h2>
+      <div class="cmds" id="asks">
+        <button data-say="name">Name<span>“what’s your name?”</span></button>
+        <button data-say="where">Where are you?<span>“do you know where you are?”</span></button>
+        <button data-say="day">What day is it?<span>“what day is it?”</span></button>
+        <button data-say="phrase">Repeat a phrase<span>“say: you can’t teach an old dog new tricks”</span></button>
+        <button data-say="happened">What happened?<span>“what’s going on today?”</span></button>
+        <button data-say="pain">Any pain?<span>“does anything hurt?”</span></button>
+      </div>
+      <p class="note" id="voiceNote"></p>
     </section>
 
     <section class="card">
@@ -184,7 +202,7 @@ function onLoad(g){
   g.scene.traverse(o=>{
     if(o.isMesh){
       const isEye=o.name.startsWith('Eye');
-      const m=new THREE.MeshBasicMaterial({map:isEye?texEye:texBody,color:isEye?0xffffff:0xf3e7da,side:isEye?THREE.FrontSide:THREE.DoubleSide});
+      const m=new THREE.MeshBasicMaterial({map:isEye?texEye:texBody,color:isEye?0xffffff:0xf3e7da,side:isEye?THREE.FrontSide:THREE.DoubleSide,vertexColors:!isEye&&!!o.geometry.attributes.color});
       o.material=m; o.frustumCulled=false;
     }
     if(o.isSkinnedMesh&&o.morphTargetDictionary){body=o;}
@@ -221,7 +239,7 @@ function onLoad(g){
 
 // ---------------- state
 let ready=false, stroke=false, strokeAmt=0;
-const C={smileL:0,smileR:0,droop:0,browL:0,browR:0,blL:0,blR:0,closeL:0,closeR:0,gx:0,gy:0,dx:0,dy:0,breath:0,catch:0,swallow:0,h1:0,h2:0,h3:0,nod:0,turn:0,tilt:0};
+const C={jaw:0,wide:0,round:0,press:0,fv:0,smileL:0,smileR:0,droop:0,browL:0,browR:0,blL:0,blR:0,closeL:0,closeR:0,gx:0,gy:0,dx:0,dy:0,breath:0,catch:0,swallow:0,h1:0,h2:0,h3:0,nod:0,turn:0,tilt:0};
 let action=null; // {name,t0,dur}
 const idle={blinkAt:1.5,blink:null,dartAt:1,dart:[0,0],swallowAt:rnd(14,24),swallow:null,head:{t:[0,0,0],v:[0,0,0],p:[0,0,0],next:0.5},chest:{t:[0,0,0],v:[0,0,0],p:[0,0,0],next:2}};
 let targetGaze=null; // for the on-screen finger dot
@@ -233,7 +251,11 @@ function blinkCurve(t){ // seconds; 16 frames at 24fps
 
 const DUR={smile:3.4,brows:3.4,close:3.6,follow:7.0,left:3.0,right:3.0,nod:1.8,swallow:1.0};
 function run(cmd,source){
-  if(!ready||!DUR[cmd])return;
+  if(!ready)return;
+  if(cmd.startsWith('say:')){const id=cmd.slice(4);logLine(ASKLABEL[id]||id,source);say(id);return;}
+  if(!DUR[cmd])return;
+  if(cmd==='nod')setTimeout(()=>say('hear'),350);
+  else if(cmd!=='smile'&&cmd!=='close'&&Math.random()<0.45)say('ok');
   action={name:cmd,t0:now,dur:DUR[cmd]};
   const labels={smile:'Smile',brows:'Raise eyebrows',close:'Close eyes tight',follow:'Follow my finger',left:'Look left',right:'Look right',nod:'Can you hear me?',swallow:'Swallow'};
   logLine(labels[cmd],source);
@@ -329,6 +351,10 @@ function tick(ts){
   if(t>Cc.next){Cc.t=[R(rnd(-.6,.6)),R(rnd(-1.4,1.4)),R(rnd(-1,1))];Cc.next=t+rnd(2.5,4.5);}
   for(const S of [[H,26,9],[Cc,8,5]]){const [o,k,c]=S;for(let i=0;i<3;i++){const a=k*(o.t[i]-o.p[i])-c*o.v[i];o.v[i]+=a*dt;o.p[i]+=o.v[i]*dt;}}
 
+  // speech: mouth shapes from the clip's loudness + the line's letters
+  const M=speechFrame(dt);
+  if(speech.on){nod+=R(1.3)*M.amp*Math.sin(now*5.1); if(speech.q) {browL=Math.max(browL,0.25);browR=Math.max(browR,0.25);} }
+
   // ---- smooth toward this frame's targets
   const f=(cur,tgt,sp)=>cur+(tgt-cur)*Math.min(1,dt*sp);
   C.smileL=f(C.smileL,smileL,9);C.smileR=f(C.smileR,smileR,9);
@@ -341,6 +367,7 @@ function tick(ts){
   C.nod=f(C.nod,nod,10);C.turn=f(C.turn,turn,6);C.tilt=f(C.tilt,tilt,6);
   C.catch=f(C.catch,catchv,14);C.swallow=f(C.swallow,swallowv,20);
   C.droop=strokeAmt;
+  {const sp=M.direct?45:11; C.jaw=f(C.jaw,M.jaw,sp);C.wide=f(C.wide,M.wide,sp*.8);C.round=f(C.round,M.round,sp*.8);C.press=f(C.press,M.press,sp);C.fv=f(C.fv,M.fv,sp);}
 
   applyRig(H.p,Cc.p);
   updateTarget();
@@ -354,6 +381,7 @@ function applyRig(hp,cp){
   const sL=C.smileL,sR=C.smileR;
   setM('Smile_L',sL);setM('Smile_R',sR);setM('SmileEyes_L',sL);setM('SmileEyes_R',sR);
   setM('Droop_R',C.droop);
+  setM('JawOpen',C.jaw);setM('MouthWide',C.wide);setM('MouthRound',C.round);setM('MouthPress',C.press);setM('MouthFV',C.fv);
   setM('BrowRaise_L',C.browL);setM('BrowRaise_R',C.browR);
   setM('BrowLower_L',Math.min(1,C.blL+0.3*C.closeL));setM('BrowLower_R',Math.min(1,C.blR+0.3*C.closeR));
   setM('EyeClose_L',C.closeL);setM('EyeClose_R',C.closeR);
@@ -402,6 +430,7 @@ function logLine(label,source){
   while(logEl.children.length>30)logEl.lastChild.remove();
 }
 document.getElementById('cmds').addEventListener('click',e=>{const b=e.target.closest('button');if(b)run(b.dataset.cmd,'button');});
+document.getElementById('asks').addEventListener('click',e=>{const b=e.target.closest('button');if(b)run('say:'+b.dataset.say,'button');});
 function setMode(s){
   stroke=s;
   document.getElementById('modeNormal').setAttribute('aria-pressed',String(!s));
@@ -421,13 +450,30 @@ const RULES=[
   ['brows',/\beye ?brows?\b|\bi brows?\b|\bbrows?\b|\bforehead\b|\b(raise|lift|wrinkle)\b|\blook surprised\b|\beyebrow\b/],
   ['smile',/\bsmile\b|\bteeth\b|\bgrin\b/],
   ['swallow',/\bswallow\b/],
-  ['nod',/\bcan you hear\b|\bhello\b|\bhi there\b|\bnod\b|\bare you (ok|okay|alright)\b/],
+  ['nod',/\bcan you hear\b|\bnod\b|\bare you (ok|okay|alright)\b/],
 ];
-function match(text){const t=' '+text.toLowerCase()+' ';for(const [c,re] of RULES)if(re.test(t))return c;return null;}
+const ASKS=[
+  ['phrase',/\b(repeat|say)\b.*\b(after me|this|phrase|sentence)\b|\bold dog\b|\bteach an\b|\bno ifs\b/],
+  ['name',/\bwhat('?s| is) your name\b|\bwho are you\b|\byour name\b/],
+  ['where',/\bwhere are (you|we)\b|\bwhere you are\b|\bknow where\b/],
+  ['day',/\bwhat day\b|\bwhat('?s| is) (the |today'?s )?date\b|\bwhat year\b|\bwhat month\b|\bday (is it|of the week)\b/],
+  ['happened',/\bwhat happened\b|\bwhat('?s| is) going on\b|\bwhy did (you|they) call\b|\bwhat brings\b/],
+  ['pain',/\b(any|in) pain\b|\bhurts?\b|\bhurting\b/],
+  ['greet',/\b(hi|hey|hello)\b|\bmy name is\b|\bi'?m (a |an |with )?(paramedic|emt|medic|the ambulance|fire)\b/],
+];
+const ASKLABEL={sorry:'Unclear question',name:'Asked his name',where:'Asked where he is',day:'Asked the day',phrase:'Repeat: old dog, new tricks',happened:'Asked what happened',pain:'Asked about pain',greet:'Greeted him'};
+function match(text){const t=' '+text.toLowerCase()+' ';
+  for(const [c,re] of RULES)if(c!=='nod'&&re.test(t))return c;
+  for(const [c,re] of ASKS)if(c!=='greet'&&re.test(t))return 'say:'+c;
+  if(RULES.find(r=>r[0]==='nod')[1].test(t))return 'nod';
+  if(ASKS.find(r=>r[0]==='greet')[1].test(t))return 'say:greet';
+  return null;}
 document.getElementById('typeForm').addEventListener('submit',e=>{
   e.preventDefault();const inp=document.getElementById('typeIn');const c=match(inp.value);
   document.getElementById('heard').textContent=inp.value?`“${inp.value}”`+(c?'':'  (no matching command)'):'';
-  if(c)run(c,'typed');inp.value='';
+  if(c)run(c,'typed');
+  else if(/\?\s*$|^\s*(what|where|who|how|when|why|do|does|did|can|are|is)\b/i.test(inp.value))run('say:sorry','typed');
+  inp.value='';
 });
 
 // voice
@@ -441,6 +487,7 @@ function startRec(){
     for(let i=ev.resultIndex;i<ev.results.length;i++){
       const txt=ev.results[i][0].transcript.trim(); heard.textContent=`“${txt}”`;
       if(handled.has(i))continue;
+      if(now<speech.muteUntil){handled.add(i);continue;}
       const c=match(txt);
       if(c&&!(c===lastCmd&&now-lastAt<2.5)){handled.add(i);lastCmd=c;lastAt=now;run(c,'voice');}
     }
@@ -504,7 +551,7 @@ camBtn.addEventListener('click',()=>{ if(cam.on){camStop();camState.textContent=
 
 // auto-start: one combined mic + camera prompt on page open, then start voice and tracking
 let userStoppedMic=false;
-micBtn.addEventListener('click',()=>{userStoppedMic=!listening;},true);
+micBtn.addEventListener('click',()=>{userStoppedMic=listening;},true);
 async function autoStart(){
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)return;
   micState.textContent='Allow the microphone and camera when your browser asks.';
@@ -528,7 +575,122 @@ addEventListener('pointerdown',function once(e){
 },true);
 autoStart();
 
-window.__sim={run,setMode,cam,get C(){return C;}};
+
+// ---------------- speech: recorded clips (voice/<line>_<normal|stroke>.mp3) with the browser voice as a fallback
+const LINES={
+  greet:{n:"Hey. Thanks for coming.",s:"Hey... thanks... for... com... coming."},
+  name:{n:"Dave. Dave Miller.",s:"Dave... Da... Dave... Mill... Miller."},
+  where:{n:"I'm at home. In my living room.",s:"Home... I'm... the... the room. Home."},
+  day:{n:"It's Tuesday, I think.",s:"It's... uh... Tues... I don't... I don't know."},
+  phrase:{n:"You can't teach an old dog new tricks.",s:"You can... teach... old... dog... new... trick."},
+  happened:{n:"I don't know. My arm felt kind of heavy, and my wife got worried.",s:"My... arm... it's... heavy. It's... I can't... wife... worried."},
+  pain:{n:"No, nothing hurts.",s:"No... no hurt. Just... funny."},
+  hear:{n:"Yeah, I can hear you.",s:"Yeah... yeah."},
+  ok:{n:"Okay.",s:"Kay."},
+  likethis:{n:"Like this?",s:"Like... this?"},
+  sorry:{n:"Sorry, what was that?",s:"What...?"},
+};
+let CUES=null; fetch('voice/lipsync.json').then(r=>r.ok?r.json():null).then(j=>{CUES=j;}).catch(()=>{});
+// Rhubarb mouth shapes -> our shape keys
+const RS={A:{jaw:0,wide:0,round:0,press:1,fv:0},B:{jaw:.16,wide:.45,round:0,press:0,fv:0},C:{jaw:.45,wide:.3,round:0,press:0,fv:0},
+  D:{jaw:.8,wide:.15,round:0,press:0,fv:0},E:{jaw:.4,wide:0,round:.45,press:0,fv:0},F:{jaw:.16,wide:0,round:.95,press:0,fv:0},
+  G:{jaw:.08,wide:.1,round:0,press:0,fv:1},H:{jaw:.4,wide:.15,round:0,press:0,fv:0},X:{jaw:0,wide:0,round:0,press:0,fv:0}};
+function erf(x){const t=1/(1+0.3275911*Math.abs(x));const y=1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-x*x);return x>=0?y:-y;}
+// smooth pose: each cue's shape weighted by how much of a small gaussian window around t it covers (anticipates the next shape like real coarticulation)
+function cuePose(cues,t,sig){
+  const out={jaw:0,wide:0,round:0,press:0,fv:0}; let W=0; const k=1/(Math.SQRT2*sig);
+  for(const c of cues){ if(c.end<t-4*sig)continue; if(c.start>t+4*sig)break;
+    const w=0.5*(erf((c.end-t)*k)-erf((c.start-t)*k)); if(w<=0)continue; const S=RS[c.value]||RS.X;
+    for(const n in out)out[n]+=S[n]*w; W+=w; }
+  if(W>0&&W<1){} // edges fade to rest naturally
+  return out;
+}
+const speech={on:false,text:'',src:null,audio:null,t0:0,ci:0,ciT:0,peak:0.05,amp:0,q:false,muteUntil:0,queued:null,cw:null,total:1};
+let actx=null,analyser=null,abuf=null;
+const sayEl=document.getElementById('say'),tapEl=document.getElementById('tapAudio');
+function ensureAudio(){
+  if(!actx){try{actx=new (window.AudioContext||window.webkitAudioContext)();analyser=actx.createAnalyser();analyser.fftSize=1024;abuf=new Float32Array(analyser.fftSize);analyser.connect(actx.destination);}catch(e){actx=null;}}
+  if(actx&&actx.state==='suspended')actx.resume().catch(()=>{});
+}
+addEventListener('pointerdown',()=>{ensureAudio();tapEl.hidden=true;if(speech.queued){const q=speech.queued;speech.queued=null;say(q);}},true);
+addEventListener('keydown',()=>ensureAudio(),true);
+tapEl.addEventListener('click',e=>{e.stopPropagation();});
+// letter weights so a clip's progress maps onto the text (pauses take longer)
+function weights(t){const w=[];let tot=0;for(let i=0;i<t.length;i++){const ch=t[i];let v=/[a-z]/i.test(ch)?1:ch===' '?0.5:ch===','?2.5:ch==='.'?(t[i+1]==='.'||t[i-1]==='.'?1.6:3):ch==='?'||ch==='!'?3:0.4;tot+=v;w.push(tot);}return {w,tot};}
+function charAt(p){const W=speech.cw;const target=p*W.tot;let lo=0,hi=W.w.length-1;while(lo<hi){const m=(lo+hi)>>1;if(W.w[m]<target)lo=m+1;else hi=m;}return lo;}
+function vclass(ch){ch=(ch||' ').toLowerCase();if(ch==='a')return 'A';if('eiy'.includes(ch))return 'E';if('ouw'.includes(ch))return 'O';if('mbp'.includes(ch))return 'M';if('fv'.includes(ch))return 'F';if(/[a-z]/.test(ch))return 'C';return '_';}
+const VT={A:{jaw:.8,wide:.1,round:0,press:0,fv:0},E:{jaw:.35,wide:.8,round:0,press:0,fv:0},O:{jaw:.42,wide:0,round:.9,press:0,fv:0},
+  M:{jaw:0,wide:0,round:0,press:.9,fv:0},F:{jaw:.12,wide:.1,round:0,press:0,fv:.9},C:{jaw:.35,wide:.25,round:0,press:0,fv:0},_:{jaw:0,wide:0,round:0,press:0,fv:0}};
+function say(id){
+  const L=LINES[id]; if(!L)return;
+  if(speech.on)stopSpeech();
+  const text=stroke?L.s:L.n; const file=`voice/${id}_${stroke?'stroke':'normal'}.mp3`;
+  speech.text=text; speech.cw=weights(text); speech.q=/\?$/.test(text.trim());
+  sayEl.textContent=text; sayEl.classList.add('on');
+  ensureAudio();
+  const a=new Audio(file); a.preload='auto';
+  let fell=false;
+  const fallback=()=>{if(fell)return;fell=true;if(speech.audio===a){speech.audio=null;}ttsSay(text,id);};
+  a.addEventListener('error',fallback,{once:true});
+  a.addEventListener('ended',()=>{if(speech.audio===a)endSpeech();});
+  speech.audio=a; speech.src='clip'; speech.on=true; speech.peak=0.05; speech.key=`${id}_${stroke?'stroke':'normal'}`; speech.tc=0;
+  try{ if(actx&&actx.state==='running'&&location.protocol!=='file:'){const n=actx.createMediaElementSource(a);n.connect(analyser);a._an=true;} }catch(e){}
+  a.play().catch(err=>{
+    if(err&&err.name==='NotAllowedError'){speech.on=false;speech.queued=id;tapEl.hidden=false;sayEl.classList.remove('on');}
+    else fallback();
+  });
+}
+function ttsSay(text,id){
+  if(!('speechSynthesis' in window)){endSpeech();return;}
+  speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(text.replace(/\.\.\./g,', '));
+  const vs=speechSynthesis.getVoices().filter(v=>/^en/i.test(v.lang));
+  const pick=vs.find(v=>/daniel|alex|fred|guy|male|david|mark|google us english/i.test(v.name))||vs[0];
+  if(pick)u.voice=pick; u.rate=stroke?0.72:1.0; u.pitch=0.9;
+  u.onboundary=e=>{speech.ci=e.charIndex;speech.ciT=now;};
+  u.onend=()=>{if(speech.src==='tts')endSpeech();};
+  u.onerror=()=>{if(speech.src==='tts')endSpeech();};
+  speech.src='tts'; speech.on=true; speech.ci=0; speech.ciT=now; speech.t0=now;
+  speechSynthesis.speak(u);
+  const note=document.getElementById('voiceNote');
+  if(note&&!note.dataset.tts){note.dataset.tts=1;note.textContent='Using the browser voice. Add the recorded clips to the voice folder for his real voice.';}
+}
+function stopSpeech(){if(speech.audio){try{speech.audio.pause();}catch(e){}speech.audio=null;}if(speech.src==='tts')speechSynthesis.cancel();endSpeech();}
+function endSpeech(){speech.on=false;speech.muteUntil=now+0.8;setTimeout(()=>{if(!speech.on)sayEl.classList.remove('on');},700);}
+const ZERO={jaw:0,wide:0,round:0,press:0,fv:0,amp:0};
+function speechFrame(dt){
+  if(!speech.on)return ZERO;
+  speech.muteUntil=now+0.8;
+  let amp=0,ci=0;
+  if(speech.src==='clip'&&speech.audio){
+    const a=speech.audio;
+    if(a._an&&actx.state==='running'){analyser.getFloatTimeDomainData(abuf);let s2=0;for(let i=0;i<abuf.length;i++)s2+=abuf[i]*abuf[i];const rms=Math.sqrt(s2/abuf.length);speech.peak=Math.max(speech.peak*0.997,rms);amp=clamp((rms-0.012)/(speech.peak*0.8-0.012),0,1);}
+    else amp=a.paused?0:0.5+0.5*Math.abs(Math.sin(now*13));
+    // steady clock: audio.currentTime can update in coarse steps, so run our own and resync
+    if(!a.paused){speech.tc+=dt; if(Math.abs(a.currentTime-speech.tc)>0.12)speech.tc=a.currentTime;}
+    const cues=CUES&&CUES[speech.key];
+    if(cues){
+      speech.amp+=(amp-speech.amp)*Math.min(1,dt*12);
+      const P=cuePose(cues,speech.tc+0.02,0.032), k=stroke?0.72:1;
+      return {jaw:P.jaw*(stroke?0.8:1)*(0.85+0.15*speech.amp), wide:P.wide*k, round:P.round*k, press:P.press, fv:P.fv*k, amp:speech.amp, direct:true};
+    }
+    const d=a.duration; ci=charAt(d&&isFinite(d)?clamp(a.currentTime/d,0,1):0);
+  }else if(speech.src==='tts'){
+    const T=speech.text.replace(/\.\.\./g,', ');
+    ci=Math.min(T.length-1,speech.ci+Math.floor((now-speech.ciT)*(stroke?9:13)));
+    const ch=T[ci]||' ';
+    amp=/[a-z]/i.test(ch)?0.55+0.45*Math.abs(Math.sin(now*(stroke?9:13))):0;
+    ci=Math.min(speech.text.length-1,ci);
+  }
+  speech.amp+=(amp-speech.amp)*Math.min(1,dt*30);
+  const cls=vclass(speech.text[ci]), t=VT[cls], k=stroke?0.7:1;
+  const voiced=speech.amp>0.06;
+  const open=voiced?(0.35+0.65*speech.amp):0;
+  return {jaw:t.jaw*open*(stroke?0.8:1), wide:t.wide*open*k, round:t.round*open*k, press:voiced||cls==='M'?t.press:0, fv:voiced?t.fv:0, amp:speech.amp};
+}
+if(!document.getElementById('voiceNote').textContent)document.getElementById('voiceNote').textContent='He answers out loud. Ask by voice, typing, or these buttons.';
+
+window.__sim={run,setMode,cam,say,speech,get C(){return C;}};
 </script>
 
 </body></html>
