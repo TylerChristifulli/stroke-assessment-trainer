@@ -446,7 +446,7 @@ function startRec(){
     }
   };
   rec.onerror=(e)=>{
-    if(e.error==='not-allowed'||e.error==='service-not-allowed'){micState.textContent='Microphone blocked here. Open the local version to use voice, or tap and type commands.';stopRec();}
+    if(e.error==='not-allowed'||e.error==='service-not-allowed'){micState.textContent='Microphone blocked. Allow it in the address bar, or tap and type commands.';stopRec();}
   };
   rec.onend=()=>{handled=new Set();if(listening){try{rec.start();}catch(_){}}};
   try{rec.start();listening=true;micBtn.classList.add('live');micBtn.setAttribute('aria-label','Stop listening');micState.textContent='Listening. Try “smile for me”.';}
@@ -464,7 +464,7 @@ async function camStart(){
   camState.textContent='Starting camera…';
   try{
     stream=await navigator.mediaDevices.getUserMedia({video:{width:640,height:480,facingMode:'user'},audio:false});
-  }catch(e){camState.textContent='Camera blocked here. Open the local version (Start Patient.command) to use your camera.';return;}
+  }catch(e){camState.textContent='Camera blocked. Allow it in the address bar, then tap the camera button.';return;}
   vid.srcObject=stream; await vid.play(); camWrap.hidden=false;
   try{
     if(!hands){
@@ -473,7 +473,7 @@ async function camStart(){
       const fs=await FilesetResolver.forVisionTasks(MP+'/wasm');
       hands=await HandLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',delegate:'GPU'},runningMode:'VIDEO',numHands:1});
     }
-  }catch(e){camState.textContent='Could not load the hand tracker. Check your internet connection and use the local version.';console.error(e);camStop();return;}
+  }catch(e){camState.textContent='Could not load the hand tracker. Check your internet connection and try again.';console.error(e);camStop();return;}
   cam.on=true; camBtn.classList.add('live'); camBtn.setAttribute('aria-label','Stop camera tracking');
   camState.textContent='Tracking. Hold up one finger and move it slowly.';
   logLine('Camera tracking on','');
@@ -500,6 +500,33 @@ function camLoop(){
   }
 }
 camBtn.addEventListener('click',()=>{ if(cam.on){camStop();camState.textContent='Camera off. Tap to track your finger again.';logLine('Camera tracking off','');} else camStart(); });
+
+
+// auto-start: one combined mic + camera prompt on page open, then start voice and tracking
+let userStoppedMic=false;
+micBtn.addEventListener('click',()=>{userStoppedMic=!listening;},true);
+async function autoStart(){
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)return;
+  micState.textContent='Allow the microphone and camera when your browser asks.';
+  camState.textContent='Allow the camera when your browser asks.';
+  let s=null;
+  try{ s=await navigator.mediaDevices.getUserMedia({audio:!!SR,video:{width:640,height:480,facingMode:'user'}}); }
+  catch(e){
+    // camera may be missing or refused; try the mic alone so voice still works
+    try{ if(SR) s=await navigator.mediaDevices.getUserMedia({audio:true}); }catch(_){}
+    if(!s){micState.textContent='Mic and camera were not allowed. Tap the mic or camera button to try again, or tap and type commands.';camState.textContent='Tap to track your finger with your camera.';return;}
+  }
+  const hasVideo=s.getVideoTracks().length>0;
+  s.getTracks().forEach(t=>t.stop());
+  if(SR&&!listening&&!userStoppedMic) startRec();
+  if(hasVideo&&!cam.on) camStart(); else camState.textContent='Tap to track your finger with your camera.';
+}
+// some browsers (Safari) only start speech after a tap: start on the first interaction if it isn't running
+addEventListener('pointerdown',function once(e){
+  removeEventListener('pointerdown',once,true);
+  if(SR&&!listening&&!userStoppedMic&&!e.target.closest('#micBtn')) startRec();
+},true);
+autoStart();
 
 window.__sim={run,setMode,cam,get C(){return C;}};
 </script>
