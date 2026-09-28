@@ -58,12 +58,24 @@ form button{font:600 13px var(--sans);background:var(--glove);color:var(--glove-
 .log time{font:12px var(--mono);color:var(--ink-dim);font-variant-numeric:tabular-nums;flex:none}
 .log b{font-weight:700}
 .cam{position:relative;margin-top:10px;border-radius:8px;overflow:hidden;border:1px solid var(--line);aspect-ratio:4/3;max-width:100%;background:#0c0e10}
+.cam.offscreen{position:fixed;left:-10000px;top:0;width:320px;height:240px;opacity:0;pointer-events:none}
+.trk{display:inline-flex;align-items:center;gap:6px;margin-top:10px;font:12px var(--mono);color:var(--ink-dim)}
+.trk i{width:8px;height:8px;border-radius:50%;background:var(--line);display:inline-block}
+.trk.seen i{background:var(--ok);box-shadow:0 0 0 3px rgba(108,197,154,.25)}
+.trk.seen{color:var(--ink)}
+.linkbtn{background:none;border:0;color:var(--ink-dim);font:12px var(--sans);text-decoration:underline;cursor:pointer;padding:0;margin-left:10px}
 .cam video,.cam canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
 .beta{display:inline-block;vertical-align:middle;margin-left:8px;font:700 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--stroke);border:1px solid var(--stroke);border-radius:5px;padding:2px 6px}
 .disclaimer{max-width:1280px;margin:18px auto 0;font-size:12.5px;color:var(--ink-dim)}
 .note{font-size:12.5px;color:var(--ink-dim);margin:8px 0 0}
 .say{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);max-width:min(560px,90%);font:500 15px var(--sans);text-align:center;padding:8px 14px;border-radius:8px;background:rgba(18,21,24,.78);color:var(--ink);opacity:0;transition:opacity .25s;pointer-events:none}
 .say.on{opacity:1}
+.start{position:absolute;inset:0;display:grid;place-items:end center;padding-bottom:5%;background:linear-gradient(to top,rgba(12,14,16,.55),rgba(12,14,16,0) 55%)}
+.start[hidden]{display:none!important}
+.start .sc{background:rgba(27,32,36,.9);border:1px solid var(--line);border-radius:14px;padding:16px 22px;text-align:center;max-width:320px;box-shadow:0 12px 40px rgba(0,0,0,.45)}
+.start h3{margin:0 0 6px;font-size:18px}
+.start p{margin:0 0 16px;font-size:13px;color:var(--ink-dim)}
+.start button{font:700 15px var(--sans);background:var(--glove);color:var(--glove-ink);border:0;border-radius:999px;padding:12px 26px;cursor:pointer}
 .tap{position:absolute;right:12px;top:12px;font:600 12px var(--sans);padding:6px 10px;border-radius:6px;background:var(--glove);color:var(--glove-ink);border:0;cursor:pointer}
 </style>
 
@@ -82,7 +94,7 @@ form button{font:600 13px var(--sans);background:var(--glove);color:var(--glove-
     <div class="target" id="target"></div>
     <div class="chip" id="chip">Normal exam</div>
     <div class="say" id="say" aria-live="polite"></div>
-    <button class="tap" id="tapAudio" hidden>Tap to hear him</button>
+    <div class="start" id="startCard" hidden><div class="sc"><h3>Ready when you are</h3><p>Starts his voice, your microphone and finger tracking.</p><button id="startBtn" type="button">Start exam</button></div></div>
     <div class="loading" id="loading">Loading patient…</div>
   </div>
 
@@ -110,7 +122,8 @@ form button{font:600 13px var(--sans);background:var(--glove);color:var(--glove-
         </button>
         <p id="camState">Hold up one finger in front of your camera and he follows it.</p>
       </div>
-      <div class="cam" id="camWrap" hidden>
+      <div class="trk" id="trk" hidden><i></i><span id="trkTxt">Looking for your finger</span><button class="linkbtn" id="camPeek" type="button">Show camera</button></div>
+      <div class="cam offscreen" id="camWrap">
         <video id="camVid" playsinline muted></video>
         <canvas id="camDot"></canvas>
       </div>
@@ -382,7 +395,7 @@ function applyRig(hp,cp){
   const sL=C.smileL,sR=C.smileR;
   setM('Smile_L',sL);setM('Smile_R',sR);setM('SmileEyes_L',sL);setM('SmileEyes_R',sR);
   setM('Droop_R',C.droop);
-  setM('JawOpen',Math.min(1,C.jaw+C.sjaw));setM('LipsPart_L',C.slL);setM('LipsPart_R',C.slR);setM('MouthWide',C.wide);setM('MouthRound',C.round);setM('MouthPress',C.press);setM('MouthFV',C.fv);setM('LipsPart',C.lips);setM('TongueUp',C.tongue);
+  setM('JawOpen',Math.min(1,C.jaw+C.sjaw));setM('LipsPart_L',C.slL);setM('LipsPart_R',C.slR);setM('MouthWide',C.wide);setM('MouthRound',C.round);setM('MouthPress',C.press);setM('MouthFV',C.fv);setM('LipsPart',C.lips);setM('TongueUp',C.tongue);setM('TeethBack',Math.min(1,C.round*1.1));
   setM('BrowRaise_L',C.browL);setM('BrowRaise_R',C.browR);
   setM('BrowLower_L',Math.min(1,C.blL+0.3*C.closeL));setM('BrowLower_R',Math.min(1,C.blR+0.3*C.closeR));
   setM('EyeClose_L',C.closeL);setM('EyeClose_R',C.closeR);
@@ -505,6 +518,10 @@ micBtn.addEventListener('click',()=>{if(listening){stopRec();micState.textConten
 
 // camera: MediaPipe hand landmarks, index fingertip drives his gaze
 const camBtn=document.getElementById('camBtn'),camState=document.getElementById('camState'),camWrap=document.getElementById('camWrap');
+const trkEl=document.getElementById('trk'),trkTxt=document.getElementById('trkTxt'),camPeek=document.getElementById('camPeek');
+camPeek.addEventListener('click',()=>{const off=camWrap.classList.toggle('offscreen');camPeek.textContent=off?'Show camera':'Hide camera';});
+let trkSeen=null;
+function trkUpdate(){const seen=cam.on&&(now-cam.seen)<0.35;if(seen!==trkSeen){trkSeen=seen;trkEl.classList.toggle('seen',seen);trkTxt.textContent=seen?'Finger found, he is tracking it':'Looking for your finger';}}
 const vid=document.getElementById('camVid'),dotC=document.getElementById('camDot'),dctx=dotC.getContext('2d');
 let hands=null,stream=null,lastVT=-1;
 const MP='https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
@@ -513,7 +530,7 @@ async function camStart(){
   try{
     stream=await navigator.mediaDevices.getUserMedia({video:{width:640,height:480,facingMode:'user'},audio:false});
   }catch(e){camState.textContent='Camera blocked. Allow it in the address bar, then tap the camera button.';return;}
-  vid.srcObject=stream; await vid.play(); camWrap.hidden=false;
+  vid.srcObject=stream; await vid.play(); trkEl.hidden=false;
   try{
     if(!hands){
       camState.textContent='Loading hand tracker…';
@@ -529,11 +546,12 @@ async function camStart(){
 }
 function camStop(){
   cam.on=false; camBtn.classList.remove('live'); camBtn.setAttribute('aria-label','Start camera tracking');
-  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;} camWrap.hidden=true;
+  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;} trkEl.hidden=true; camWrap.classList.add('offscreen'); camPeek.textContent='Show camera';
 }
 function camLoop(){
   if(!cam.on)return;
   requestAnimationFrame(camLoop);
+  trkUpdate();
   if(!hands||vid.readyState<2||vid.currentTime===lastVT)return;
   lastVT=vid.currentTime;
   const res=hands.detectForVideo(vid,performance.now());
@@ -599,13 +617,13 @@ fetch('voice/lipsync.json').then(r=>{if(!r.ok)throw 0;return r.json();})
 // Rhubarb mouth shapes -> our shape keys
 const RS={ // Preston Blair mouth chart, as Rhubarb names them
   A:{jaw:0,wide:0,round:0,press:1,fv:0,lips:0,tongue:0},          // M B P: lips pressed
-  B:{jaw:.1,wide:.4,round:0,press:0,fv:0,lips:1,tongue:0},        // most consonants, EE: teeth together, lips apart
-  C:{jaw:.4,wide:.5,round:0,press:0,fv:0,lips:.5,tongue:0},       // EH AE: open
-  D:{jaw:.85,wide:.15,round:0,press:0,fv:0,lips:.4,tongue:0},     // AA: wide open
-  E:{jaw:.35,wide:0,round:.6,press:0,fv:0,lips:.2,tongue:0},      // AO ER: slightly rounded
+  B:{jaw:.12,wide:.2,round:0,press:0,fv:0,lips:.7,tongue:0},        // most consonants, EE: teeth together, lips apart
+  C:{jaw:.45,wide:.25,round:0,press:0,fv:0,lips:.35,tongue:0},       // EH AE: open
+  D:{jaw:.85,wide:.1,round:0,press:0,fv:0,lips:.3,tongue:0},     // AA: wide open
+  E:{jaw:.35,wide:0,round:.6,press:0,fv:0,lips:.1,tongue:0},      // AO ER: slightly rounded
   F:{jaw:.12,wide:0,round:1,press:0,fv:0,lips:0,tongue:0},        // OO W: puckered
   G:{jaw:.08,wide:.1,round:0,press:0,fv:1,lips:.3,tongue:0},      // F V: teeth on lower lip
-  H:{jaw:.45,wide:.15,round:0,press:0,fv:0,lips:.4,tongue:1},     // L: tongue up to the teeth
+  H:{jaw:.45,wide:.1,round:0,press:0,fv:0,lips:.3,tongue:1},     // L: tongue up to the teeth
   X:{jaw:0,wide:0,round:0,press:0,fv:0,lips:0,tongue:0}};         // rest
 function erf(x){const t=1/(1+0.3275911*Math.abs(x));const y=1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-x*x);return x>=0?y:-y;}
 // smooth pose: each cue's shape weighted by how much of a small gaussian window around t it covers (anticipates the next shape like real coarticulation)
@@ -619,14 +637,27 @@ function cuePose(cues,t,sig){
 }
 const speech={on:false,text:'',src:null,audio:null,t0:0,ci:0,ciT:0,peak:0.05,amp:0,q:false,muteUntil:0,queued:null,cw:null,total:1};
 let actx=null,analyser=null,abuf=null;
-const sayEl=document.getElementById('say'),tapEl=document.getElementById('tapAudio');
+const sayEl=document.getElementById('say'),startCard=document.getElementById('startCard'),startBtn=document.getElementById('startBtn');
+// Browsers only allow sound after the person interacts with the page. If this browser already allows it
+// (e.g. an embed that passes autoplay through), skip the card; otherwise one "Start exam" tap unlocks it for the whole session.
+let audioUnlocked=false;
+function autoplayAllowed(){try{if(navigator.getAutoplayPolicy)return navigator.getAutoplayPolicy('mediaelement')==='allowed';}catch(e){}return false;}
+function unlockAudio(){
+  ensureAudio();
+  try{const a=new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=');a.play().catch(()=>{});}catch(e){}
+  audioUnlocked=true; startCard.hidden=true;
+}
+function showStart(){ if(!audioUnlocked&&!autoplayAllowed()) startCard.hidden=false; else audioUnlocked=true; }
+startBtn.addEventListener('click',e=>{e.stopPropagation();unlockAudio();
+  if(SR&&!listening&&!userStoppedMic)startRec();
+  if(speech.queued){const q=speech.queued;speech.queued=null;say(q);} });
+(function waitReady(){ if(ready)showStart(); else setTimeout(waitReady,200); })();
 function ensureAudio(){
   if(!actx){try{actx=new (window.AudioContext||window.webkitAudioContext)();analyser=actx.createAnalyser();analyser.fftSize=1024;abuf=new Float32Array(analyser.fftSize);analyser.connect(actx.destination);}catch(e){actx=null;}}
   if(actx&&actx.state==='suspended')actx.resume().catch(()=>{});
 }
-addEventListener('pointerdown',()=>{ensureAudio();tapEl.hidden=true;if(speech.queued){const q=speech.queued;speech.queued=null;say(q);}},true);
+addEventListener('pointerdown',()=>{ensureAudio();if(!audioUnlocked){audioUnlocked=true;startCard.hidden=true;}if(speech.queued){const q=speech.queued;speech.queued=null;say(q);}},true);
 addEventListener('keydown',()=>ensureAudio(),true);
-tapEl.addEventListener('click',e=>{e.stopPropagation();});
 // letter weights so a clip's progress maps onto the text (pauses take longer)
 function weights(t){const w=[];let tot=0;for(let i=0;i<t.length;i++){const ch=t[i];let v=/[a-z]/i.test(ch)?1:ch===' '?0.5:ch===','?2.5:ch==='.'?(t[i+1]==='.'||t[i-1]==='.'?1.6:3):ch==='?'||ch==='!'?3:0.4;tot+=v;w.push(tot);}return {w,tot};}
 function charAt(p){const W=speech.cw;const target=p*W.tot;let lo=0,hi=W.w.length-1;while(lo<hi){const m=(lo+hi)>>1;if(W.w[m]<target)lo=m+1;else hi=m;}return lo;}
@@ -647,7 +678,7 @@ function say(id){
   speech.audio=a; speech.src='clip'; speech.on=true; speech.peak=0.05; speech.key=`${id}_${stroke?'stroke':'normal'}`; speech.tc=0; speech.lastCT=-1; speech.lastCTat=now;
   try{ if(actx&&actx.state==='running'&&location.protocol!=='file:'){const n=actx.createMediaElementSource(a);n.connect(analyser);a._an=true;} }catch(e){}
   a.play().catch(err=>{
-    if(err&&err.name==='NotAllowedError'){speech.on=false;speech.queued=id;tapEl.hidden=false;sayEl.classList.remove('on');}
+    if(err&&err.name==='NotAllowedError'){speech.on=false;speech.queued=id;audioUnlocked=false;startCard.hidden=false;sayEl.classList.remove('on');}
     else fallback();
   });
 }
@@ -685,8 +716,8 @@ function speechFrame(dt){
     if(L){
       // jaw rides the clip's own loudness curve (precomputed, 100 per second) so it opens on every syllable and shuts in pauses;
       // the chart shapes from Rhubarb only flavour the lips (wide, round, press, F/V, tongue)
-      const lat=(a._an&&actx)?((actx.outputLatency||0)+(actx.baseLatency||0)):0;
-      const tt=Math.max(0,speech.tc-lat+0.03);
+      // no output-latency correction: some browsers over-report it, which made the mouth trail the voice
+      const tt=Math.max(0,speech.tc+0.05);
       const samp=(arr,sc)=>{if(!arr)return null;const fi=tt*100,i=Math.floor(fi),fr=fi-i;const v0=arr[Math.min(i,arr.length-1)]||0,v1=arr[Math.min(i+1,arr.length-1)]||0;return (v0+(v1-v0)*fr)/sc;};
       const env=samp(L.env,99)??amp, vox=samp(L.vox,9)??1;
       const cues=L.cues||L, P=cuePose(cues,tt,0.045), Pm=cuePose(cues,tt,0.022), k=stroke?0.72:1;
@@ -695,7 +726,7 @@ function speechFrame(dt){
       // lip shapes relax as the voice fades, so he never holds a bared-teeth shape in a pause;
       // tiny lip gaps are dropped (a sliver of teeth between flat lips reads as a grimace)
       const g=ss(0.02,0.25,env), fv=P.fv*vox*(1-0.6*env)*k*open;
-      const lraw=vox*Math.max(P.lips*g,0.55*env)*k*open*(1-0.7*fv);
+      const lraw=vox*Math.max(P.lips*g,0.25*env)*k*open*(1-0.7*fv);
       return {jaw:Math.min(1,env*(0.45+0.8*P.jaw))*(stroke?0.75:1)*open, lips:clamp((lraw-0.12)/0.88,0,1),
         wide:P.wide*vox*g*k*open, round:P.round*vox*k, fv, tongue:P.tongue*vox*k*open,
         press:pr, amp:env, direct:true};

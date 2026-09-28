@@ -27,9 +27,12 @@ A missing clip falls back to the browser voice.
 HOSTING NOTES FOR THE SANDBOX
 1. Serve it over HTTPS. Browsers only allow the microphone and camera on secure pages.
 2. If the sandbox shows it inside an iframe, the iframe needs camera and mic permission:
-     <iframe src=".../index.html" allow="camera; microphone; fullscreen"
+     <iframe src=".../index.html" allow="camera; microphone; autoplay; fullscreen"
              style="width:100%;aspect-ratio:16/10;border:0"></iframe>
    Without the allow attribute the page still works with tap and typed commands.
+   Browsers block sound until the learner interacts with the page, so a standalone page
+   shows one "Start exam" button. Inside an iframe with autoplay allowed, after the learner
+   has clicked into the cartridge, Chrome skips that button and he can talk right away.
 3. The page loads these at runtime, so the sandbox's security policy must allow them:
      cdn.jsdelivr.net          three.js (3D engine) and MediaPipe (hand tracking)
      storage.googleapis.com    the MediaPipe hand-tracking model (only when the camera is used)
