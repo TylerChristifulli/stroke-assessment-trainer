@@ -1,4 +1,4 @@
-Stroke Assessment Trainer (Experimental), v2
+Stroke Assessment Trainer (Experimental), v2, updated Sep 28
 ============================================
 
 WHAT IT IS
